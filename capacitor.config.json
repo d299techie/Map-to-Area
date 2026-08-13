@@ -1,0 +1,18 @@
+{
+  "appId": "com.map2area.app",
+  "appName": "Map to Area",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true
+  },
+  "plugins": {
+    "Geolocation": {
+      "permission": "always"
+    }
+  }
+}

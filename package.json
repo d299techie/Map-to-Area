@@ -1,0 +1,17 @@
+{
+  "name": "map-to-area",
+  "version": "1.0.0",
+  "description": "GPS field area measurement app",
+  "private": true,
+  "scripts": {
+    "android:init": "npx cap add android",
+    "android:sync": "npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:build": "cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^5.7.8",
+    "@capacitor/cli": "^5.7.8",
+    "@capacitor/core": "^5.7.8"
+  }
+}

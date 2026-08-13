@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a1a2e">
+<title>Map to Area</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+body { display: flex; flex-direction: column; }
+header {
+  background: #1a1a2e; color: #eee; padding: 8px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 6px; position: relative; z-index: 1000;
+}
+header h1 { font-size: 16px; font-weight: 600; }
+header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block; }
+.controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.controls button, .controls select {
+  padding: 5px 10px; border: none; border-radius: 4px;
+  cursor: pointer; font-size: 12px; transition: background .15s;
+}
+.btn-primary { background: #0f3460; color: #fff; }
+.btn-primary:hover { background: #1a5276; }
+.btn-danger { background: #e94560; color: #fff; }
+.btn-danger:hover { background: #c73a52; }
+.btn-success { background: #2d6a4f; color: #fff; }
+.btn-success:hover { background: #40916c; }
+.btn-gps { background: #e9c46a; color: #1a1a2e; }
+.btn-gps.active { background: #f4a261; }
+.btn-secondary { background: #16213e; color: #ccc; }
+.btn-secondary:hover { background: #1f2f52; }
+#map { flex: 1; }
+.area-panel {
+  background: rgba(26, 26, 46, 0.95); color: #eee; padding: 10px 16px;
+  display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+  position: relative; z-index: 1000; border-top: 1px solid #333;
+}
+.area-stat { display: flex; flex-direction: column; min-width: 80px; }
+.area-stat .value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.area-stat .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+.area-stat .sub { font-size: 10px; color: #666; }
+.hint {
+  color: #888; font-size: 12px; padding: 0 16px 6px;
+  background: rgba(26, 26, 46, 0.95); position: relative; z-index: 1000;
+}
+.leaflet-container { background: #0d1b2a; }
+.leaflet-control-zoom a { background: #1a1a2e; color: #ccc; border-color: #333; }
+.leaflet-control-zoom a:hover { background: #16213e; color: #fff; }
+.leaflet-control-attribution { background: rgba(26,26,46,.85) !important; color: #555; font-size: 9px !important; }
+.leaflet-control-attribution a { color: #777; }
+.point-label { background: none !important; border: none !important; box-shadow: none !important;
+  color: #ff6b81; font-weight: bold; font-size: 11px; }
+.gps-marker-pulse {
+  width: 12px; height: 12px; background: #4cc9f0; border: 2px solid #fff;
+  border-radius: 50%; animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(76, 201, 240, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(76, 201, 240, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(76, 201, 240, 0); }
+}
+.gps-coords {
+  font-size: 10px; color: #4cc9f0; padding: 0 16px 6px;
+  background: rgba(26, 26, 46, 0.95); position: relative; z-index: 1000;
+  display: flex; gap: 16px;
+}
+.gps-coords span { display: flex; align-items: center; gap: 4px; }
+.gps-coords .dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 4px;
+}
+.gps-coords .dot.fix { background: #4cc9f0; }
+.gps-coords .dot.no-fix { background: #e94560; }
+@media (max-width: 480px) {
+  header h1 small { display: none; }
+  .controls button, .controls select { font-size: 11px; padding: 4px 7px; }
+  .area-stat .value { font-size: 14px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Map to Area <small>GPS field area measurement</small></h1>
+  <div class="controls">
+    <button id="gpsBtn" class="btn-gps" title="Track GPS position">📍 GPS</button>
+    <button id="gpsDropBtn" class="btn-success" disabled title="Place a marker at current GPS position">+GPS</button>
+    <button id="drawBtn" class="btn-primary">Start Drawing</button>
+    <button id="undoBtn" class="btn-secondary" disabled>Undo</button>
+    <button id="clearBtn" class="btn-danger" disabled>Clear</button>
+    <select id="unitSelect">
+      <option value="sqm">m²</option>
+      <option value="sqkm" selected>km²</option>
+      <option value="ha">Hectares</option>
+      <option value="acre">Acres</option>
+      <option value="sqft">ft²</option>
+      <option value="sqmi">mi²</option>
+      <option value="sqyd">yd²</option>
+    </select>
+  </div>
+</header>
+<div id="map"></div>
+<div class="gps-coords" id="gpsCoords">
+  <span><span class="dot no-fix" id="gpsDot"></span>GPS: <span id="gpsStatus">off</span></span>
+  <span id="gpsLatDisplay">Lat: —</span>
+  <span id="gpsLngDisplay">Lng: —</span>
+  <span id="gpsAccDisplay">Acc: —</span>
+</div>
+<div class="hint" id="hint">Click on the map to place points and form a polygon</div>
+<div class="area-panel">
+  <div class="area-stat">
+    <span class="label">Area</span>
+    <span class="value" id="areaValue">—</span>
+    <span class="sub" id="areaSub"></span>
+  </div>
+  <div class="area-stat">
+    <span class="label">Perimeter</span>
+    <span class="value" id="perimValue">—</span>
+    <span class="sub" id="perimSub">km</span>
+  </div>
+  <div class="area-stat">
+    <span class="label">Points</span>
+    <span class="value" id="pointCount">0</span>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+(() => {
+  const map = L.map('map', {
+    center: [20, 0], zoom: 2,
+    worldCopyJump: true, zoomControl: true,
+  });
+
+  // Satellite tile layer (ESRI World Imagery)
+  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '&copy; Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19,
+  }).addTo(map);
+
+  // Dark streets overlay for contrast
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OSM, CARTO',
+    maxZoom: 19, subdomains: 'abcd',
+  }).addTo(map);
+
+  // State
+  const state = { points: [], drawing: false, gpsActive: false };
+  let drawnLayer, measureLayer, ghostLine, ghostMarker;
+  let gpsMarker, gpsAccuracyCircle, gpsWatchId = null;
+
+  const areaEl = document.getElementById('areaValue');
+  const areaSubEl = document.getElementById('areaSub');
+  const perimEl = document.getElementById('perimValue');
+  const perimSubEl = document.getElementById('perimSub');
+  const pointCountEl = document.getElementById('pointCount');
+  const hintEl = document.getElementById('hint');
+  const drawBtn = document.getElementById('drawBtn');
+  const gpsBtn = document.getElementById('gpsBtn');
+  const gpsDropBtn = document.getElementById('gpsDropBtn');
+  const undoBtn = document.getElementById('undoBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const unitSelect = document.getElementById('unitSelect');
+  const gpsStatus = document.getElementById('gpsStatus');
+  const gpsLatDisplay = document.getElementById('gpsLatDisplay');
+  const gpsLngDisplay = document.getElementById('gpsLngDisplay');
+  const gpsAccDisplay = document.getElementById('gpsAccDisplay');
+  const gpsDot = document.getElementById('gpsDot');
+
+  let gpsPosition = null;
+
+  function geoToMeters(p1, p2) {
+    const R = 6371000;
+    const dLat = (p2[1] - p1[1]) * Math.PI / 180;
+    const dLon = (p2[0] - p1[0]) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(p1[1]*Math.PI/180) * Math.cos(p2[1]*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function areaOfPolygon(pts) {
+    if (pts.length < 3) return 0;
+    const closed = pts.map(p => [p.lng, p.lat]);
+    try {
+      const poly = turf.polygon([[...closed, closed[0]]]);
+      return turf.area(poly);
+    } catch { return 0; }
+  }
+
+  function perimeterOfPolygon(pts) {
+    if (pts.length < 2) return 0;
+    let perim = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      perim += geoToMeters([pts[i].lng, pts[i].lat], [pts[j].lng, pts[j].lat]);
+    }
+    return perim;
+  }
+
+  function clearLayers() {
+    if (drawnLayer) { map.removeLayer(drawnLayer); drawnLayer = null; }
+    if (measureLayer) { map.removeLayer(measureLayer); measureLayer = null; }
+    if (ghostLine) { map.removeLayer(ghostLine); ghostLine = null; }
+    if (ghostMarker) { map.removeLayer(ghostMarker); ghostMarker = null; }
+  }
+
+  function formatArea(sqMeters, unit) {
+    const units = {
+      sqm: { v: 1, l: 'm²' },
+      sqkm: { v: 1e-6, l: 'km²' },
+      ha: { v: 1e-4, l: 'ha' },
+      acre: { v: 0.000247105, l: 'acres' },
+      sqft: { v: 10.7639, l: 'ft²' },
+      sqmi: { v: 3.861e-7, l: 'mi²' },
+      sqyd: { v: 1.19599, l: 'yd²' },
+    };
+    const u = units[unit];
+    const val = sqMeters * u.v;
+    return { value: val >= 100 ? val.toLocaleString('en', {maximumFractionDigits: 2}) : val.toLocaleString('en', {maximumFractionDigits: 4}), label: u.l };
+  }
+
+  function formatPerim(meters) {
+    if (meters >= 1000) return { value: (meters/1000).toLocaleString('en', {maximumFractionDigits: 2}), label: 'km' };
+    return { value: meters.toLocaleString('en', {maximumFractionDigits: 1}), label: 'm' };
+  }
+
+  function updateUI() {
+    const pts = state.points;
+    pointCountEl.textContent = pts.length;
+
+    if (pts.length < 3) {
+      areaEl.textContent = '—';
+      areaSubEl.textContent = '';
+      perimEl.textContent = '—';
+      perimSubEl.textContent = '—';
+      clearBtn.disabled = pts.length === 0;
+      return;
+    }
+
+    const sqMeters = areaOfPolygon(pts);
+    const perimMeters = perimeterOfPolygon(pts);
+    const unit = unitSelect.value;
+    const fmt = formatArea(sqMeters, unit);
+    const perimFmt = formatPerim(perimMeters);
+
+    areaEl.textContent = fmt.value;
+    areaSubEl.textContent = fmt.label;
+    perimEl.textContent = perimFmt.value;
+    perimSubEl.textContent = perimFmt.label;
+    clearBtn.disabled = false;
+  }
+
+  function redraw() {
+    clearLayers();
+    const pts = state.points;
+    if (pts.length === 0) { updateUI(); return; }
+
+    const latlngs = pts.map(p => [p.lat, p.lng]);
+
+    measureLayer = L.layerGroup().addTo(map);
+    pts.forEach((p, i) => {
+      const marker = L.circleMarker([p.lat, p.lng], {
+        radius: 5, color: '#e94560', fillColor: '#ff6b81',
+        fillOpacity: 1, weight: 2,
+      }).addTo(measureLayer);
+      marker.bindTooltip(`${i + 1}`, { permanent: true, direction: 'top', offset: [0, -8], className: 'point-label' });
+    });
+
+    if (pts.length >= 2) {
+      drawnLayer = L.polyline(latlngs, {
+        color: '#0f3460', weight: 3, opacity: 0.8,
+      }).addTo(map);
+    }
+
+    if (pts.length >= 3) {
+      if (drawnLayer) map.removeLayer(drawnLayer);
+      drawnLayer = L.polygon(latlngs, {
+        color: '#e94560', weight: 2, fillColor: '#e94560',
+        fillOpacity: 0.15,
+      }).addTo(map);
+    }
+
+    updateUI();
+  }
+
+  function addPoint(latlng) {
+    state.points.push(latlng);
+    redraw();
+    undoBtn.disabled = false;
+    if (state.points.length >= 3) drawBtn.textContent = 'Keep Drawing';
+  }
+
+  function undoPoint() {
+    if (state.points.length === 0) return;
+    state.points.pop();
+    redraw();
+    if (state.points.length === 0) undoBtn.disabled = true;
+  }
+
+  function clearAll() {
+    state.points = [];
+    clearLayers();
+    if (ghostLine) { map.removeLayer(ghostLine); ghostLine = null; }
+    if (ghostMarker) { map.removeLayer(ghostMarker); ghostMarker = null; }
+    updateUI();
+    undoBtn.disabled = true;
+    clearBtn.disabled = true;
+    drawBtn.textContent = 'Start Drawing';
+  }
+
+  // ---- GPS ----
+  function updateGpsUI(pos) {
+    const lat = pos.coords.latitude.toFixed(6);
+    const lng = pos.coords.longitude.toFixed(6);
+    const acc = pos.coords.accuracy.toFixed(1);
+    gpsStatus.textContent = 'active';
+    gpsDot.className = 'dot fix';
+    gpsLatDisplay.textContent = `Lat: ${lat}`;
+    gpsLngDisplay.textContent = `Lng: ${lng}`;
+    gpsAccDisplay.textContent = `Acc: ${acc}m`;
+    gpsPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    gpsDropBtn.disabled = false;
+
+    const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+
+    if (gpsMarker) {
+      gpsMarker.setLatLng(latlng);
+    } else {
+      const icon = L.divIcon({
+        className: '', html: '<div class="gps-marker-pulse"></div>',
+        iconSize: [12, 12], iconAnchor: [6, 6],
+      });
+      gpsMarker = L.marker(latlng, { icon, zIndexOffset: 10000 }).addTo(map);
+    }
+
+    if (gpsAccuracyCircle) {
+      gpsAccuracyCircle.setLatLng(latlng);
+      gpsAccuracyCircle.setRadius(pos.coords.accuracy);
+    } else {
+      gpsAccuracyCircle = L.circle(latlng, {
+        radius: pos.coords.accuracy,
+        color: '#4cc9f0', fillColor: '#4cc9f0', fillOpacity: 0.08, weight: 1,
+      }).addTo(map);
+    }
+
+    // Auto-center on first fix or if still zoomed out
+    if (map.getZoom() < 5) map.setView(latlng, 16);
+  }
+
+  function startGps() {
+    if (!navigator.geolocation) {
+      alert('GPS not available on this device');
+      return;
+    }
+    gpsBtn.classList.add('active');
+    gpsBtn.textContent = '📍 GPS ON';
+    gpsStatus.textContent = 'searching...';
+
+    gpsWatchId = navigator.geolocation.watchPosition(
+      (pos) => updateGpsUI(pos),
+      (err) => {
+        gpsStatus.textContent = `error (${err.code})`;
+        gpsDot.className = 'dot no-fix';
+      },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+    );
+    state.gpsActive = true;
+  }
+
+  function stopGps() {
+    if (gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+      gpsWatchId = null;
+    }
+    if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
+    if (gpsAccuracyCircle) { map.removeLayer(gpsAccuracyCircle); gpsAccuracyCircle = null; }
+    gpsBtn.classList.remove('active');
+    gpsBtn.textContent = '📍 GPS';
+    gpsStatus.textContent = 'off';
+    gpsDot.className = 'dot no-fix';
+    gpsLatDisplay.textContent = 'Lat: —';
+    gpsLngDisplay.textContent = 'Lng: —';
+    gpsAccDisplay.textContent = 'Acc: —';
+    gpsPosition = null;
+    state.gpsActive = false;
+    gpsDropBtn.disabled = true;
+  }
+
+  function toggleGps() {
+    if (state.gpsActive) { stopGps(); }
+    else { startGps(); }
+  }
+
+  // ---- Drawing mode ----
+  function onMapClick(e) {
+    addPoint(e.latlng);
+  }
+
+  function onMapMove(e) {
+    if (state.points.length === 0) return;
+    const pts = state.points;
+    const latlng = e.latlng;
+
+    if (ghostMarker) map.removeLayer(ghostMarker);
+    ghostMarker = L.circleMarker([latlng.lat, latlng.lng], {
+      radius: 4, color: '#e94560', fillColor: '#ff6b81',
+      fillOpacity: 0.5, weight: 1, dashArray: '3,3',
+    }).addTo(map);
+
+    if (ghostLine) map.removeLayer(ghostLine);
+    const allPoints = [...pts.map(p => [p.lat, p.lng]), [latlng.lat, latlng.lng]];
+    ghostLine = L.polyline(allPoints, {
+      color: '#e94560', weight: 2, opacity: 0.4, dashArray: '5,5',
+    }).addTo(map);
+  }
+
+  function enableDrawing() {
+    state.drawing = true;
+    map.on('click', onMapClick);
+    map.on('mousemove', onMapMove);
+    map.getContainer().style.cursor = 'crosshair';
+    drawBtn.textContent = 'Finish Drawing';
+    drawBtn.className = 'btn-danger';
+    hintEl.textContent = 'Click map or tap here from GPS walk to place points';
+  }
+
+  function disableDrawing() {
+    state.drawing = false;
+    map.off('click', onMapClick);
+    map.off('mousemove', onMapMove);
+    map.getContainer().style.cursor = '';
+    if (ghostLine) { map.removeLayer(ghostLine); ghostLine = null; }
+    if (ghostMarker) { map.removeLayer(ghostMarker); ghostMarker = null; }
+    drawBtn.textContent = state.points.length >= 3 ? 'Start New' : 'Start Drawing';
+    drawBtn.className = 'btn-primary';
+    hintEl.textContent = state.points.length >= 3 ? 'Polygon drawn' : 'Click Start Drawing to begin';
+  }
+
+  // Keyboard shortcut: Space to place GPS point while drawing
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && state.drawing && gpsPosition) {
+      e.preventDefault();
+      addPoint(L.latLng(gpsPosition.lat, gpsPosition.lng));
+    }
+  });
+
+  drawBtn.addEventListener('click', () => {
+    if (state.drawing) {
+      disableDrawing();
+    } else {
+      if (state.points.length >= 3) clearAll();
+      enableDrawing();
+    }
+  });
+
+  gpsBtn.addEventListener('click', toggleGps);
+
+  gpsDropBtn.addEventListener('click', () => {
+    if (gpsPosition && state.drawing) {
+      addPoint(L.latLng(gpsPosition.lat, gpsPosition.lng));
+    }
+  });
+
+  undoBtn.addEventListener('click', undoPoint);
+  clearBtn.addEventListener('click', clearAll);
+  unitSelect.addEventListener('change', updateUI);
+
+  enableDrawing();
+})();
+</script>
+</body>
+</html>
