@@ -29,10 +29,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Init & Add Android platform
-        run: |
-          npx cap init MapToArea com.map2area.app --web-dir=.
-          npx cap add android
+      - name: Add Android platform
+        run: npx cap add android
 
       - name: Sync web code to Android
         run: npx cap sync android

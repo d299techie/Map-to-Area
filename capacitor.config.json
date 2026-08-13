@@ -1,7 +1,7 @@
 {
   "appId": "com.map2area.app",
   "appName": "Map to Area",
-  "webDir": ".",
+  "webDir": "./",
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"
