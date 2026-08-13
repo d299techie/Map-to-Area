@@ -37,11 +37,8 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
-      - name: Bump SDK versions & patch manifest
-        run: |
-          python3 scripts/bump_sdk.py
-          python3 scripts/patch_manifest.py
-          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
+      - name: Bump SDK versions
+        run: python3 scripts/bump_sdk.py
 
       - name: Sync web code to Android
         run: npx cap sync android
