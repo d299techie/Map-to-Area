@@ -18,7 +18,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -29,8 +29,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Add Android platform
-        run: npx cap add android
+      - name: Init & Add Android platform
+        run: |
+          npx cap init MapToArea com.map2area.app --web-dir=.
+          npx cap add android
 
       - name: Sync web code to Android
         run: npx cap sync android
