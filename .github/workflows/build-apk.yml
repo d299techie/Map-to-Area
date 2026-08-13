@@ -29,6 +29,11 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Prepare www directory for Capacitor
+        run: |
+          mkdir -p www
+          cp index.html manifest.json sw.js www/
+
       - name: Add Android platform
         run: npx cap add android
 
