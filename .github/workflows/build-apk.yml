@@ -37,6 +37,18 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Bump Android SDK versions
+        run: |
+          # Bump SDK versions in variables.gradle
+          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 24/' android/variables.gradle
+          sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 35/' android/variables.gradle
+          sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 35/' android/variables.gradle
+          sed -i 's/compileSdk [0-9]*/compileSdk 35/' android/variables.gradle
+          sed -i 's/targetSdk [0-9]*/targetSdk 35/' android/variables.gradle
+
+          # Update gradle wrapper properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
+
       - name: Sync web code to Android
         run: npx cap sync android
 
