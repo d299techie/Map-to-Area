@@ -37,38 +37,11 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
-      - name: Bump Android SDK versions
+      - name: Bump SDK versions & patch manifest
         run: |
-          python3 -c "
-import re
-with open('android/variables.gradle') as f:
-    c = f.read()
-c = re.sub(r'minSdkVersion\s*=\s*\d+', 'minSdkVersion = 24', c)
-c = re.sub(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = 35', c)
-c = re.sub(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = 35', c)
-c = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 35', c)
-c = re.sub(r'targetSdk\s*=\s*\d+', 'targetSdk = 35', c)
-with open('android/variables.gradle', 'w') as f:
-    f.write(c)
-print('Updated variables.gradle')
-"
-          # Update gradle wrapper properties (use 8.4 for compat with Capacitor 5 AGP)
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.4-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
-
-      - name: Patch Android manifest for allowBackup
-        run: |
-          python3 -c "
-with open('android/app/src/main/AndroidManifest.xml') as f:
-    c = f.read()
-# Add android:allowBackup if missing (required by newer SDK tools)
-c = c.replace(
-    '<application',
-    '<application android:allowBackup=\"true\"'
-)
-with open('android/app/src/main/AndroidManifest.xml', 'w') as f:
-    f.write(c)
-print('Patched AndroidManifest.xml')
-"
+          python3 scripts/bump_sdk.py
+          python3 scripts/patch_manifest.py
+          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Sync web code to Android
         run: npx cap sync android
