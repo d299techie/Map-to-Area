@@ -39,15 +39,36 @@ jobs:
 
       - name: Bump Android SDK versions
         run: |
-          # Bump SDK versions in variables.gradle
-          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 24/' android/variables.gradle
-          sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 35/' android/variables.gradle
-          sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 35/' android/variables.gradle
-          sed -i 's/compileSdk [0-9]*/compileSdk 35/' android/variables.gradle
-          sed -i 's/targetSdk [0-9]*/targetSdk 35/' android/variables.gradle
+          python3 -c "
+import re
+with open('android/variables.gradle') as f:
+    c = f.read()
+c = re.sub(r'minSdkVersion\s*=\s*\d+', 'minSdkVersion = 24', c)
+c = re.sub(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = 35', c)
+c = re.sub(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = 35', c)
+c = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 35', c)
+c = re.sub(r'targetSdk\s*=\s*\d+', 'targetSdk = 35', c)
+with open('android/variables.gradle', 'w') as f:
+    f.write(c)
+print('Updated variables.gradle')
+"
+          # Update gradle wrapper properties (use 8.4 for compat with Capacitor 5 AGP)
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.4-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
 
-          # Update gradle wrapper properties
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
+      - name: Patch Android manifest for allowBackup
+        run: |
+          python3 -c "
+with open('android/app/src/main/AndroidManifest.xml') as f:
+    c = f.read()
+# Add android:allowBackup if missing (required by newer SDK tools)
+c = c.replace(
+    '<application',
+    '<application android:allowBackup=\"true\"'
+)
+with open('android/app/src/main/AndroidManifest.xml', 'w') as f:
+    f.write(c)
+print('Patched AndroidManifest.xml')
+"
 
       - name: Sync web code to Android
         run: npx cap sync android
