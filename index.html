@@ -33,7 +33,12 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 .btn-gps.active { background: #f4a261; }
 .btn-secondary { background: #16213e; color: #ccc; }
 .btn-secondary:hover { background: #1f2f52; }
-#map { flex: 1; }
+.btn-mode { background: #3a2a6f; color: #ddd; }
+.btn-mode.active { background: #7c3aed; color: #fff; }
+.btn-mode:hover { background: #5b21b6; color: #fff; }
+.btn-warning { background: #d4a017; color: #1a1a2e; }
+.btn-warning:hover { background: #e8b830; }
+#map { flex: 1; min-height: 0; }
 .area-panel {
   background: rgba(26, 26, 46, 0.95); color: #eee; padding: 10px 16px;
   display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
@@ -75,10 +80,22 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 }
 .gps-coords .dot.fix { background: #4cc9f0; }
 .gps-coords .dot.no-fix { background: #e94560; }
-@media (max-width: 480px) {
+.search-box {
+  display: flex; gap: 4px; align-items: center;
+}
+.search-box input {
+  padding: 4px 8px; border: none; border-radius: 4px; font-size: 12px;
+  background: #16213e; color: #eee; width: 120px; outline: none;
+}
+.search-box input::placeholder { color: #666; }
+@media (max-width: 520px) {
   header h1 small { display: none; }
   .controls button, .controls select { font-size: 11px; padding: 4px 7px; }
   .area-stat .value { font-size: 14px; }
+  .search-box input { width: 80px; }
+}
+@media (max-width: 400px) {
+  .search-box input { width: 60px; font-size: 10px; }
 }
 </style>
 </head>
@@ -86,40 +103,65 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 <header>
   <h1>Map to Area <small>GPS field area measurement</small></h1>
   <div class="controls">
-    <button id="gpsBtn" class="btn-gps" title="Track GPS position">📍 GPS</button>
+    <button id="gpsBtn" class="btn-gps" title="Track GPS position">&#x1F4CD; GPS</button>
     <button id="gpsDropBtn" class="btn-success" disabled title="Place a marker at current GPS position">+GPS</button>
+    <button id="gpsLocateBtn" class="btn-gps" disabled title="Move map to current GPS location">&#x1F4CD;&#x2192;</button>
+    <button id="saveGpsBtn" class="btn-secondary" disabled title="Save current GPS location">&#x1F4CC;</button>
     <button id="drawBtn" class="btn-primary">Start Drawing</button>
     <button id="undoBtn" class="btn-secondary" disabled>Undo</button>
+    <button id="redoBtn" class="btn-secondary" disabled>Redo</button>
     <button id="clearBtn" class="btn-danger" disabled>Clear</button>
+    <button id="modeBtn" class="btn-mode active">Area</button>
     <select id="unitSelect">
-      <option value="sqm">m²</option>
-      <option value="sqkm" selected>km²</option>
+      <option value="sqm">m&sup2;</option>
+      <option value="sqkm" selected>km&sup2;</option>
       <option value="ha">Hectares</option>
       <option value="acre">Acres</option>
-      <option value="sqft">ft²</option>
-      <option value="sqmi">mi²</option>
-      <option value="sqyd">yd²</option>
+      <option value="cent">Cents</option>
+      <option value="kaani">Kaani</option>
+      <option value="sqft">ft&sup2;</option>
+      <option value="sqmi">mi&sup2;</option>
+      <option value="sqyd">yd&sup2;</option>
     </select>
+    <select id="lenUnitSelect">
+      <option value="m">m</option>
+      <option value="km" selected>km</option>
+      <option value="ft">ft</option>
+      <option value="yd">yd</option>
+      <option value="mi">mi</option>
+    </select>
+    <button id="saveMapBtn" class="btn-secondary" title="Save map markings" disabled>&#x1F4BE; Save</button>
+    <button id="loadMapBtn" class="btn-secondary" title="Open saved map">&#x1F4C2; Open</button>
+    <button id="screenshotBtn" class="btn-secondary" title="Take screenshot">&#x1F4F7;</button>
+    <div class="search-box">
+      <input id="searchInput" type="text" placeholder="Search place..." />
+      <button id="searchBtn" class="btn-primary">Go</button>
+    </div>
   </div>
 </header>
 <div id="map"></div>
 <div class="gps-coords" id="gpsCoords">
   <span><span class="dot no-fix" id="gpsDot"></span>GPS: <span id="gpsStatus">off</span></span>
-  <span id="gpsLatDisplay">Lat: —</span>
-  <span id="gpsLngDisplay">Lng: —</span>
-  <span id="gpsAccDisplay">Acc: —</span>
+  <span id="gpsLatDisplay">Lat: &mdash;</span>
+  <span id="gpsLngDisplay">Lng: &mdash;</span>
+  <span id="gpsAccDisplay">Acc: &mdash;</span>
 </div>
 <div class="hint" id="hint">Click on the map to place points and form a polygon</div>
 <div class="area-panel">
   <div class="area-stat">
-    <span class="label">Area</span>
-    <span class="value" id="areaValue">—</span>
-    <span class="sub" id="areaSub"></span>
+    <span class="label" id="primaryLabel">Area</span>
+    <span class="value" id="primaryValue">&mdash;</span>
+    <span class="sub" id="primarySub"></span>
   </div>
   <div class="area-stat">
     <span class="label">Perimeter</span>
-    <span class="value" id="perimValue">—</span>
+    <span class="value" id="perimValue">&mdash;</span>
     <span class="sub" id="perimSub">km</span>
+  </div>
+  <div class="area-stat">
+    <span class="label">Length</span>
+    <span class="value" id="lengthValue">&mdash;</span>
+    <span class="sub" id="lengthSub">m</span>
   </div>
   <div class="area-stat">
     <span class="label">Points</span>
@@ -135,38 +177,70 @@ if ('serviceWorker' in navigator) {
 (() => {
   const map = L.map('map', {
     center: [20, 0], zoom: 2,
-    worldCopyJump: true, zoomControl: true,
+    worldCopyJump: true, zoomControl: true, maxZoom: 22,
   });
 
-  // Satellite tile layer (ESRI World Imagery)
   const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; Esri, Maxar, Earthstar Geographics',
-    maxZoom: 19,
+    maxZoom: 22,
   }).addTo(map);
 
-  // Dark streets overlay for contrast
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OSM, CARTO',
-    maxZoom: 19, subdomains: 'abcd',
+    maxZoom: 22, subdomains: 'abcd',
   }).addTo(map);
 
-  // State
-  const state = { points: [], drawing: false, gpsActive: false };
-  let drawnLayer, measureLayer, ghostLine, ghostMarker;
-  let gpsMarker, gpsAccuracyCircle, gpsWatchId = null;
+  const AREA_UNITS = {
+    sqm: { v: 1, l: 'm\u00b2' },
+    sqkm: { v: 1e-6, l: 'km\u00b2' },
+    ha: { v: 1e-4, l: 'ha' },
+    acre: { v: 0.000247105, l: 'acres' },
+    cent: { v: 0.0247105, l: 'cents' },
+    kaani: { v: 0.00032618, l: 'kaani' },
+    sqft: { v: 10.7639, l: 'ft\u00b2' },
+    sqmi: { v: 3.861e-7, l: 'mi\u00b2' },
+    sqyd: { v: 1.19599, l: 'yd\u00b2' },
+  };
 
-  const areaEl = document.getElementById('areaValue');
-  const areaSubEl = document.getElementById('areaSub');
+  const LENGTH_UNITS = {
+    m: { v: 1, l: 'm' },
+    km: { v: 1e-3, l: 'km' },
+    ft: { v: 3.28084, l: 'ft' },
+    yd: { v: 1.09361, l: 'yd' },
+    mi: { v: 0.000621371, l: 'mi' },
+  };
+
+  const state = { points: [], redoStack: [], drawing: false, gpsActive: false, mode: 'area' };
+  let drawnLayer, measureLayer, ghostLine, ghostMarker, dragMarkers = [];
+  let gpsMarker, gpsAccuracyCircle, gpsWatchId = null;
+  let dragIndex = null;
+  let savedGpsPoints = JSON.parse(localStorage.getItem('maparea_saved_gps') || '[]');
+
+  const primaryEl = document.getElementById('primaryValue');
+  const primarySubEl = document.getElementById('primarySub');
+  const primaryLabel = document.getElementById('primaryLabel');
   const perimEl = document.getElementById('perimValue');
   const perimSubEl = document.getElementById('perimSub');
+  const lengthEl = document.getElementById('lengthValue');
+  const lengthSubEl = document.getElementById('lengthSub');
   const pointCountEl = document.getElementById('pointCount');
   const hintEl = document.getElementById('hint');
   const drawBtn = document.getElementById('drawBtn');
   const gpsBtn = document.getElementById('gpsBtn');
   const gpsDropBtn = document.getElementById('gpsDropBtn');
+  const gpsLocateBtn = document.getElementById('gpsLocateBtn');
+  const saveGpsBtn = document.getElementById('saveGpsBtn');
   const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
   const clearBtn = document.getElementById('clearBtn');
+  const modeBtn = document.getElementById('modeBtn');
   const unitSelect = document.getElementById('unitSelect');
+  const lenUnitSelect = document.getElementById('lenUnitSelect');
+  const saveMapBtn = document.getElementById('saveMapBtn');
+  const loadMapBtn = document.getElementById('loadMapBtn');
+  const screenshotBtn = document.getElementById('screenshotBtn');
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
   const gpsStatus = document.getElementById('gpsStatus');
   const gpsLatDisplay = document.getElementById('gpsLatDisplay');
   const gpsLngDisplay = document.getElementById('gpsLngDisplay');
@@ -202,57 +276,99 @@ if ('serviceWorker' in navigator) {
     return perim;
   }
 
+  function lengthOfPoints(pts) {
+    if (pts.length < 2) return 0;
+    let len = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      len += geoToMeters([pts[i].lng, pts[i].lat], [pts[i + 1].lng, pts[i + 1].lat]);
+    }
+    return len;
+  }
+
   function clearLayers() {
     if (drawnLayer) { map.removeLayer(drawnLayer); drawnLayer = null; }
     if (measureLayer) { map.removeLayer(measureLayer); measureLayer = null; }
     if (ghostLine) { map.removeLayer(ghostLine); ghostLine = null; }
     if (ghostMarker) { map.removeLayer(ghostMarker); ghostMarker = null; }
+    dragMarkers.forEach(m => { if (m) map.removeLayer(m); });
+    dragMarkers = [];
   }
 
   function formatArea(sqMeters, unit) {
-    const units = {
-      sqm: { v: 1, l: 'm²' },
-      sqkm: { v: 1e-6, l: 'km²' },
-      ha: { v: 1e-4, l: 'ha' },
-      acre: { v: 0.000247105, l: 'acres' },
-      sqft: { v: 10.7639, l: 'ft²' },
-      sqmi: { v: 3.861e-7, l: 'mi²' },
-      sqyd: { v: 1.19599, l: 'yd²' },
-    };
-    const u = units[unit];
+    const u = AREA_UNITS[unit];
+    if (!u) return { value: '\u2014', label: '' };
     const val = sqMeters * u.v;
     return { value: val >= 100 ? val.toLocaleString('en', {maximumFractionDigits: 2}) : val.toLocaleString('en', {maximumFractionDigits: 4}), label: u.l };
   }
 
-  function formatPerim(meters) {
-    if (meters >= 1000) return { value: (meters/1000).toLocaleString('en', {maximumFractionDigits: 2}), label: 'km' };
-    return { value: meters.toLocaleString('en', {maximumFractionDigits: 1}), label: 'm' };
+  function formatLen(meters, unit) {
+    const u = LENGTH_UNITS[unit];
+    if (!u) return { value: '\u2014', label: '' };
+    const val = meters * u.v;
+    return { value: val >= 100 ? val.toLocaleString('en', {maximumFractionDigits: 2}) : val.toLocaleString('en', {maximumFractionDigits: 4}), label: u.l };
+  }
+
+  function getAreaUnit() {
+    const v = unitSelect.value;
+    return AREA_UNITS[v] ? v : 'sqkm';
+  }
+
+  function getLengthUnit() {
+    return lenUnitSelect.value || 'km';
   }
 
   function updateUI() {
     const pts = state.points;
+    const mode = state.mode;
     pointCountEl.textContent = pts.length;
 
-    if (pts.length < 3) {
-      areaEl.textContent = '—';
-      areaSubEl.textContent = '';
-      perimEl.textContent = '—';
-      perimSubEl.textContent = '—';
+    unitSelect.disabled = mode === 'length';
+    saveMapBtn.disabled = pts.length === 0;
+
+    if (pts.length < 2) {
+      primaryEl.textContent = '\u2014';
+      primarySubEl.textContent = '';
+      perimEl.textContent = '\u2014';
+      perimSubEl.textContent = '\u2014';
+      lengthEl.textContent = '\u2014';
+      lengthSubEl.textContent = '\u2014';
       clearBtn.disabled = pts.length === 0;
       return;
     }
 
-    const sqMeters = areaOfPolygon(pts);
-    const perimMeters = perimeterOfPolygon(pts);
-    const unit = unitSelect.value;
-    const fmt = formatArea(sqMeters, unit);
-    const perimFmt = formatPerim(perimMeters);
+    const lenMeters = lengthOfPoints(pts);
+    const lenUnit = getLengthUnit();
+    const lenFmt = formatLen(lenMeters, lenUnit);
 
-    areaEl.textContent = fmt.value;
-    areaSubEl.textContent = fmt.label;
-    perimEl.textContent = perimFmt.value;
-    perimSubEl.textContent = perimFmt.label;
+    lengthEl.textContent = lenFmt.value;
+    lengthSubEl.textContent = lenFmt.label;
     clearBtn.disabled = false;
+
+    if (mode === 'area') {
+      primaryLabel.textContent = 'Area';
+      if (pts.length >= 3) {
+        const sqMeters = areaOfPolygon(pts);
+        const perimMeters = perimeterOfPolygon(pts);
+        const areaUnit = getAreaUnit();
+        const fmt = formatArea(sqMeters, areaUnit);
+        const perimFmt = formatLen(perimMeters, lenUnit);
+        primaryEl.textContent = fmt.value;
+        primarySubEl.textContent = fmt.label;
+        perimEl.textContent = perimFmt.value;
+        perimSubEl.textContent = perimFmt.label;
+      } else {
+        primaryEl.textContent = '\u2014';
+        primarySubEl.textContent = '';
+        perimEl.textContent = '\u2014';
+        perimSubEl.textContent = '\u2014';
+      }
+    } else {
+      primaryLabel.textContent = 'Length';
+      primaryEl.textContent = lenFmt.value;
+      primarySubEl.textContent = lenFmt.label;
+      perimEl.textContent = '\u2014';
+      perimSubEl.textContent = '\u2014';
+    }
   }
 
   function redraw() {
@@ -265,24 +381,47 @@ if ('serviceWorker' in navigator) {
     measureLayer = L.layerGroup().addTo(map);
     pts.forEach((p, i) => {
       const marker = L.circleMarker([p.lat, p.lng], {
-        radius: 5, color: '#e94560', fillColor: '#ff6b81',
+        radius: 7, color: '#e94560', fillColor: '#ff6b81',
         fillOpacity: 1, weight: 2,
       }).addTo(measureLayer);
-      marker.bindTooltip(`${i + 1}`, { permanent: true, direction: 'top', offset: [0, -8], className: 'point-label' });
+      marker.bindTooltip(`${i + 1}`, { permanent: true, direction: 'top', offset: [0, -10], className: 'point-label' });
+
+      const dragMarker = L.marker([p.lat, p.lng], {
+        icon: L.divIcon({
+          className: '', html: '<div style="width:18px;height:18px;background:transparent;cursor:grab"></div>',
+          iconSize: [18, 18], iconAnchor: [9, 9],
+        }),
+        draggable: true, zIndexOffset: 5000,
+      }).addTo(map);
+      dragMarker._pointIndex = i;
+      dragMarker.on('dragstart', () => { dragIndex = i; });
+      dragMarker.on('drag', (e) => {
+        const ll = e.target.getLatLng();
+        state.points[i] = { lat: ll.lat, lng: ll.lng };
+        redraw();
+      });
+      dragMarker.on('dragend', () => {
+        state.redoStack = [];
+        redoBtn.disabled = true;
+        undoBtn.disabled = false;
+        dragIndex = null;
+      });
+      dragMarkers.push(dragMarker);
     });
 
-    if (pts.length >= 2) {
-      drawnLayer = L.polyline(latlngs, {
-        color: '#0f3460', weight: 3, opacity: 0.8,
-      }).addTo(map);
-    }
+    const isAreaMode = state.mode === 'area';
 
-    if (pts.length >= 3) {
-      if (drawnLayer) map.removeLayer(drawnLayer);
-      drawnLayer = L.polygon(latlngs, {
-        color: '#e94560', weight: 2, fillColor: '#e94560',
-        fillOpacity: 0.15,
-      }).addTo(map);
+    if (pts.length >= 2) {
+      if (isAreaMode && pts.length >= 3) {
+        drawnLayer = L.polygon(latlngs, {
+          color: '#e94560', weight: 2, fillColor: '#e94560',
+          fillOpacity: 0.15,
+        }).addTo(map);
+      } else {
+        drawnLayer = L.polyline(latlngs, {
+          color: '#0f3460', weight: 3, opacity: 0.8,
+        }).addTo(map);
+      }
     }
 
     updateUI();
@@ -290,27 +429,54 @@ if ('serviceWorker' in navigator) {
 
   function addPoint(latlng) {
     state.points.push(latlng);
+    state.redoStack = [];
     redraw();
     undoBtn.disabled = false;
-    if (state.points.length >= 3) drawBtn.textContent = 'Keep Drawing';
+    redoBtn.disabled = true;
+    drawBtn.textContent = state.points.length >= 3 ? 'Pause Drawing' : 'Pause Drawing';
   }
 
   function undoPoint() {
     if (state.points.length === 0) return;
-    state.points.pop();
+    state.redoStack.push(state.points.pop());
     redraw();
     if (state.points.length === 0) undoBtn.disabled = true;
+    redoBtn.disabled = false;
+  }
+
+  function redoPoint() {
+    if (state.redoStack.length === 0) return;
+    state.points.push(state.redoStack.pop());
+    redraw();
+    undoBtn.disabled = false;
+    if (state.redoStack.length === 0) redoBtn.disabled = true;
   }
 
   function clearAll() {
     state.points = [];
+    state.redoStack = [];
     clearLayers();
     if (ghostLine) { map.removeLayer(ghostLine); ghostLine = null; }
     if (ghostMarker) { map.removeLayer(ghostMarker); ghostMarker = null; }
     updateUI();
     undoBtn.disabled = true;
+    redoBtn.disabled = true;
     clearBtn.disabled = true;
     drawBtn.textContent = 'Start Drawing';
+    drawBtn.className = 'btn-primary';
+  }
+
+  function toggleMode() {
+    if (state.mode === 'area') {
+      state.mode = 'length';
+      modeBtn.textContent = 'Length';
+      modeBtn.classList.remove('active');
+    } else {
+      state.mode = 'area';
+      modeBtn.textContent = 'Area';
+      modeBtn.classList.add('active');
+    }
+    redraw();
   }
 
   // ---- GPS ----
@@ -325,6 +491,8 @@ if ('serviceWorker' in navigator) {
     gpsAccDisplay.textContent = `Acc: ${acc}m`;
     gpsPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     gpsDropBtn.disabled = false;
+    gpsLocateBtn.disabled = false;
+    saveGpsBtn.disabled = false;
 
     const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
 
@@ -348,7 +516,6 @@ if ('serviceWorker' in navigator) {
       }).addTo(map);
     }
 
-    // Auto-center on first fix or if still zoomed out
     if (map.getZoom() < 5) map.setView(latlng, 16);
   }
 
@@ -358,7 +525,7 @@ if ('serviceWorker' in navigator) {
       return;
     }
     gpsBtn.classList.add('active');
-    gpsBtn.textContent = '📍 GPS ON';
+    gpsBtn.textContent = '\uD83D\uDCCD GPS ON';
     gpsStatus.textContent = 'searching...';
 
     gpsWatchId = navigator.geolocation.watchPosition(
@@ -380,20 +547,165 @@ if ('serviceWorker' in navigator) {
     if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
     if (gpsAccuracyCircle) { map.removeLayer(gpsAccuracyCircle); gpsAccuracyCircle = null; }
     gpsBtn.classList.remove('active');
-    gpsBtn.textContent = '📍 GPS';
+    gpsBtn.textContent = '\uD83D\uDCCD GPS';
     gpsStatus.textContent = 'off';
     gpsDot.className = 'dot no-fix';
-    gpsLatDisplay.textContent = 'Lat: —';
-    gpsLngDisplay.textContent = 'Lng: —';
-    gpsAccDisplay.textContent = 'Acc: —';
+    gpsLatDisplay.textContent = 'Lat: \u2014';
+    gpsLngDisplay.textContent = 'Lng: \u2014';
+    gpsAccDisplay.textContent = 'Acc: \u2014';
     gpsPosition = null;
     state.gpsActive = false;
     gpsDropBtn.disabled = true;
+    gpsLocateBtn.disabled = true;
+    saveGpsBtn.disabled = true;
   }
 
   function toggleGps() {
     if (state.gpsActive) { stopGps(); }
     else { startGps(); }
+  }
+
+  // ---- 1a: Move map to GPS location ----
+  function moveToGps() {
+    if (!gpsPosition) return;
+    map.setView([gpsPosition.lat, gpsPosition.lng], Math.max(map.getZoom(), 16));
+  }
+
+  // ---- 2a: Save GPS location ----
+  function saveCurrentGps() {
+    if (!gpsPosition) return;
+    const name = prompt('Name this GPS location:', `Point ${savedGpsPoints.length + 1}`);
+    if (!name) return;
+    savedGpsPoints.push({ name, lat: gpsPosition.lat, lng: gpsPosition.lng });
+    localStorage.setItem('maparea_saved_gps', JSON.stringify(savedGpsPoints));
+    alert(`Saved: ${name}`);
+  }
+
+  // ---- 1b: Search place ----
+  function searchPlace() {
+    const q = searchInput.value.trim();
+    if (!q) return;
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.length === 0) { alert('Place not found'); return; }
+        const { lat, lon, display_name } = data[0];
+        map.setView([lat, lon], 16);
+        hintEl.textContent = display_name;
+      })
+      .catch(() => alert('Search failed. Check internet connection.'));
+  }
+
+  // ---- 2b: Screenshot ----
+  function takeScreenshot() {
+    const svgEl = document.querySelector('.leaflet-control-zoom');
+    if (svgEl) svgEl.style.display = 'none';
+    const mapContainer = document.getElementById('map');
+    const oldHint = hintEl.textContent;
+    hintEl.textContent = 'Screenshot saved to Downloads';
+    import('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js').then(() => {
+      html2canvas(document.body, { useCORS: true, scale: 2, backgroundColor: '#0d1b2a' }).then(canvas => {
+        if (svgEl) svgEl.style.display = '';
+        const link = document.createElement('a');
+        link.download = `map-${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        setTimeout(() => { hintEl.textContent = oldHint; }, 3000);
+      }).catch(() => {
+        if (svgEl) svgEl.style.display = '';
+        hintEl.textContent = oldHint;
+        alert('Screenshot failed');
+      });
+    }).catch(() => {
+      if (svgEl) svgEl.style.display = '';
+      hintEl.textContent = oldHint;
+      alert('Failed to load screenshot library.');
+    });
+  }
+
+  // ---- 2c: Save/Load map markings ----
+  function saveMap() {
+    if (state.points.length === 0) return;
+    const name = prompt('Name this map:', `Map ${Date.now()}`);
+    if (!name) return;
+    const data = { name, points: state.points, areaUnit: unitSelect.value, lenUnit: lenUnitSelect.value, mode: state.mode };
+    const stored = JSON.parse(localStorage.getItem('maparea_saved_maps') || '{}');
+    stored[name] = data;
+    localStorage.setItem('maparea_saved_maps', JSON.stringify(stored));
+    alert(`Saved: ${name}`);
+  }
+
+  function loadMap() {
+    const stored = JSON.parse(localStorage.getItem('maparea_saved_maps') || '{}');
+    const names = Object.keys(stored);
+    if (names.length === 0) { alert('No saved maps'); return; }
+
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#1a1a2e;color:#eee;padding:20px;border-radius:8px;max-width:90vw;max-height:80vh;overflow-y:auto';
+    box.innerHTML = '<h3 style="margin-bottom:10px">Open Map</h3>';
+    names.forEach(name => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #333';
+      const label = document.createElement('span');
+      label.textContent = name;
+      label.style.cssText = 'flex:1;font-size:13px';
+      const openBtn = document.createElement('button');
+      openBtn.textContent = 'Open';
+      openBtn.className = 'btn-primary';
+      openBtn.style.cssText = 'padding:3px 8px;border:none;border-radius:4px;cursor:pointer;font-size:11px';
+      const delBtn = document.createElement('button');
+      delBtn.textContent = 'Delete';
+      delBtn.className = 'btn-danger';
+      delBtn.style.cssText = 'padding:3px 8px;border:none;border-radius:4px;cursor:pointer;font-size:11px';
+      row.appendChild(label);
+      row.appendChild(openBtn);
+      row.appendChild(delBtn);
+      box.appendChild(row);
+
+      openBtn.addEventListener('click', () => {
+        const data = stored[name];
+        state.points = data.points.map(p => ({ lat: p.lat, lng: p.lng }));
+        state.redoStack = [];
+        if (data.areaUnit) unitSelect.value = data.areaUnit;
+        if (data.lenUnit) lenUnitSelect.value = data.lenUnit;
+        if (data.mode) {
+          state.mode = data.mode;
+          modeBtn.textContent = state.mode === 'area' ? 'Area' : 'Length';
+          modeBtn.classList.toggle('active', state.mode === 'area');
+        }
+        state.drawing = false;
+        if (ghostLine) { map.removeLayer(ghostLine); ghostLine = null; }
+        if (ghostMarker) { map.removeLayer(ghostMarker); ghostMarker = null; }
+        map.off('click', onMapClick);
+        map.off('mousemove', onMapMove);
+        redraw();
+        if (state.points.length > 0) {
+          setTimeout(() => {
+            map.fitBounds(state.points.map(p => [p.lat, p.lng]), { padding: [40, 40], maxZoom: 18 });
+          }, 100);
+        }
+        undoBtn.disabled = false;
+        drawBtn.textContent = state.points.length > 0 ? 'Continue Drawing' : 'Start Drawing';
+        drawBtn.className = 'btn-primary';
+        div.remove();
+      });
+      delBtn.addEventListener('click', () => {
+        delete stored[name];
+        localStorage.setItem('maparea_saved_maps', JSON.stringify(stored));
+        row.remove();
+        if (Object.keys(stored).length === 0) div.remove();
+      });
+    });
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Close';
+    closeBtn.className = 'btn-secondary';
+    closeBtn.style.cssText = 'margin-top:10px;padding:5px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px';
+    closeBtn.addEventListener('click', () => div.remove());
+    box.appendChild(closeBtn);
+    div.appendChild(box);
+    document.body.appendChild(div);
   }
 
   // ---- Drawing mode ----
@@ -424,8 +736,8 @@ if ('serviceWorker' in navigator) {
     map.on('click', onMapClick);
     map.on('mousemove', onMapMove);
     map.getContainer().style.cursor = 'crosshair';
-    drawBtn.textContent = 'Finish Drawing';
-    drawBtn.className = 'btn-danger';
+    drawBtn.textContent = 'Pause Drawing';
+    drawBtn.className = 'btn-warning';
     hintEl.textContent = 'Click map or tap here from GPS walk to place points';
   }
 
@@ -436,29 +748,47 @@ if ('serviceWorker' in navigator) {
     map.getContainer().style.cursor = '';
     if (ghostLine) { map.removeLayer(ghostLine); ghostLine = null; }
     if (ghostMarker) { map.removeLayer(ghostMarker); ghostMarker = null; }
-    drawBtn.textContent = state.points.length >= 3 ? 'Start New' : 'Start Drawing';
+    drawBtn.textContent = 'Continue Drawing';
     drawBtn.className = 'btn-primary';
-    hintEl.textContent = state.points.length >= 3 ? 'Polygon drawn' : 'Click Start Drawing to begin';
+    hintEl.textContent = state.points.length >= 3 ? 'Drag any point to adjust' : 'Click Start Drawing to begin';
   }
 
-  // Keyboard shortcut: Space to place GPS point while drawing
+  function startNewDrawing() {
+    clearAll();
+    enableDrawing();
+  }
+
+  function ensureDrawing() {
+    if (state.points.length >= 3) {
+      startNewDrawing();
+    } else {
+      enableDrawing();
+    }
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && state.drawing && gpsPosition) {
       e.preventDefault();
       addPoint(L.latLng(gpsPosition.lat, gpsPosition.lng));
+    }
+    if (e.key === 'Enter' && document.activeElement === searchInput) {
+      searchPlace();
     }
   });
 
   drawBtn.addEventListener('click', () => {
     if (state.drawing) {
       disableDrawing();
+    } else if (state.points.length > 0) {
+      enableDrawing();
     } else {
-      if (state.points.length >= 3) clearAll();
       enableDrawing();
     }
   });
 
   gpsBtn.addEventListener('click', toggleGps);
+  gpsLocateBtn.addEventListener('click', moveToGps);
+  saveGpsBtn.addEventListener('click', saveCurrentGps);
 
   gpsDropBtn.addEventListener('click', () => {
     if (gpsPosition && state.drawing) {
@@ -466,9 +796,18 @@ if ('serviceWorker' in navigator) {
     }
   });
 
+  searchBtn.addEventListener('click', searchPlace);
+
   undoBtn.addEventListener('click', undoPoint);
+  redoBtn.addEventListener('click', redoPoint);
   clearBtn.addEventListener('click', clearAll);
+  modeBtn.addEventListener('click', toggleMode);
   unitSelect.addEventListener('change', updateUI);
+  lenUnitSelect.addEventListener('change', updateUI);
+
+  saveMapBtn.addEventListener('click', saveMap);
+  loadMapBtn.addEventListener('click', loadMap);
+  screenshotBtn.addEventListener('click', takeScreenshot);
 
   enableDrawing();
 })();
