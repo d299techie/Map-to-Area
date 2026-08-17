@@ -59,6 +59,12 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 .pts-toggle input:checked + .slider::before { transform: translateX(14px); background: #fff; }
 .search-input { padding: 4px 8px; border: 1px solid #444; border-radius: 4px; font-size: 12px; background: #16213e; color: #eee; width: 150px; outline: none; flex-shrink: 0; }
 .search-input::placeholder { color: #666; }
+.search-input:focus { border-color: #7c3aed; }
+.search-wrap { position: relative; display: flex; align-items: center; gap: 4px; }
+.search-results { position: absolute; top: 100%; left: 0; right: 44px; z-index: 9999; background: #1a1a2e; border: 1px solid #444; border-radius: 4px; max-height: 160px; overflow-y: auto; display: none; }
+.search-results div { padding: 5px 8px; font-size: 11px; color: #ccc; cursor: pointer; border-bottom: 1px solid #333; }
+.search-results div:hover, .search-results div.selected { background: #2d2d5e; color: #fff; }
+.search-results div:last-child { border-bottom: none; }
 .bottom-actions { display: flex; gap: 6px; align-items: center; margin-left: auto; }
 .bottom-actions button { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background .15s; }
 .btn-live { background: #2d6a4f; color: #fff; }
@@ -188,7 +194,11 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
       <span class="slider"></span>
     </label>
   </div>
-  <input id="searchInput" type="text" placeholder="Search place..." class="search-input" />
+  <div class="search-wrap">
+    <input id="searchInput" type="text" placeholder="Search place or lat,lng..." class="search-input" />
+    <div id="searchResults" class="search-results"></div>
+    <button id="searchGoBtn" class="btn-primary" title="Go to selected place or coordinate">Go</button>
+  </div>
   <button id="saveGpsBtn" class="btn-secondary" disabled title="Save current GPS location">&#x1F4CC;</button>
   <div class="bottom-actions">
     <button id="gpsLocateBtn" class="btn-gps" title="Locate my position and move map">&#x1F4CD; Locate</button>
@@ -268,6 +278,8 @@ if ('serviceWorker' in navigator) {
   const loadMapBtn = document.getElementById('loadMapBtn');
   const screenshotBtn = document.getElementById('screenshotBtn');
   const searchInput = document.getElementById('searchInput');
+  const searchResults = document.getElementById('searchResults');
+  const searchGoBtn = document.getElementById('searchGoBtn');
   const gpsStatus = document.getElementById('gpsStatus');
   const gpsLatDisplay = document.getElementById('gpsLatDisplay');
   const gpsLngDisplay = document.getElementById('gpsLngDisplay');
@@ -676,25 +688,118 @@ if ('serviceWorker' in navigator) {
     alert(`Saved: ${name}`);
   }
 
-  // ---- Auto-search place with debounce ----
+  // ---- Search with suggestions and Go button ----
   let searchTimeout = null;
-  function searchPlace() {
-    const q = searchInput.value.trim();
-    if (!q) return;
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.length === 0) { return; }
-        const { lat, lon, display_name } = data[0];
-        map.setView([lat, lon], 16);
-        hintEl.textContent = display_name;
-      })
-      .catch(() => {});
+  let searchData = [];
+
+  function doSearch(query) {
+    return fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1`)
+      .then(r => r.json());
+  }
+
+  function isCoordInput(val) {
+    const trimmed = val.trim();
+    const coordRegex = /^-?\d+\.?\d*\s*[, ]+\s*-?\d+\.?\d*$/;
+    return coordRegex.test(trimmed);
+  }
+
+  function parseCoord(val) {
+    const parts = val.trim().split(/[, ]+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const lat = parseFloat(parts[0]);
+      const lng = parseFloat(parts[1]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        return { lat, lng };
+      }
+    }
+    return null;
+  }
+
+  function showSuggestions(data) {
+    searchData = data;
+    searchResults.innerHTML = '';
+    if (data.length === 0) {
+      searchResults.style.display = 'none';
+      return;
+    }
+    data.forEach((item, i) => {
+      const div = document.createElement('div');
+      div.textContent = item.display_name;
+      div.addEventListener('click', () => {
+        searchInput.value = item.display_name;
+        searchResults.style.display = 'none';
+      });
+      searchResults.appendChild(div);
+    });
+    searchResults.style.display = 'block';
+  }
+
+  function goToSelected() {
+    searchResults.style.display = 'none';
+    const val = searchInput.value.trim();
+    if (!val) return;
+
+    // Check if it's coordinates first
+    if (isCoordInput(val)) {
+      const coord = parseCoord(val);
+      if (coord) {
+        map.setView([coord.lat, coord.lng], 16);
+        hintEl.textContent = `Lat: ${coord.lat.toFixed(6)}, Lng: ${coord.lng.toFixed(6)}`;
+        return;
+      }
+    }
+
+    // Check if the current value matches a selected suggestion
+    const match = searchData.find(d => d.display_name === val);
+    if (match) {
+      map.setView([match.lat, match.lon], 16);
+      hintEl.textContent = match.display_name;
+      return;
+    }
+
+    // Otherwise, do a direct search and move to first result
+    doSearch(val).then(data => {
+      if (data.length === 0) {
+        hintEl.textContent = 'Place not found';
+        return;
+      }
+      const { lat, lon, display_name } = data[0];
+      map.setView([lat, lon], 16);
+      hintEl.textContent = display_name;
+    }).catch(() => {});
   }
 
   searchInput.addEventListener('input', () => {
+    const val = searchInput.value.trim();
+    if (val.length < 2) {
+      searchResults.style.display = 'none';
+      searchData = [];
+      return;
+    }
+    if (isCoordInput(val)) {
+      searchResults.style.display = 'none';
+      searchData = [];
+      return;
+    }
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(searchPlace, 600);
+    searchTimeout = setTimeout(() => {
+      doSearch(val).then(data => showSuggestions(data)).catch(() => {});
+    }, 400);
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      goToSelected();
+    }
+  });
+
+  searchGoBtn.addEventListener('click', goToSelected);
+
+  // Close suggestions on click outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrap')) {
+      searchResults.style.display = 'none';
+    }
   });
 
   // ---- 2b: Screenshot ----
