@@ -246,7 +246,6 @@ if ('serviceWorker' in navigator) {
   const gpsDot = document.getElementById('gpsDot');
 
   let gpsPosition = null;
-  let capWatchId = null;
 
   function geoToMeters(p1, p2) {
     const R = 6371000;
@@ -492,10 +491,6 @@ if ('serviceWorker' in navigator) {
   }
 
   function stopGps() {
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Geolocation && capWatchId !== null) {
-      window.Capacitor.Plugins.Geolocation.clearWatch({ id: capWatchId });
-      capWatchId = null;
-    }
     if (gpsWatchId !== null) {
       navigator.geolocation.clearWatch(gpsWatchId);
       gpsWatchId = null;
@@ -515,70 +510,69 @@ if ('serviceWorker' in navigator) {
 
   // ---- Move map to GPS location (auto-starts GPS if needed) ----
   function moveToGps() {
+    if (!navigator.geolocation) {
+      alert('GPS not available on this device');
+      return;
+    }
+
     gpsStatus.textContent = 'searching...';
     gpsDot.className = 'dot no-fix';
 
-    // Use Capacitor Geolocation plugin if available, fallback to browser API
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Geolocation) {
-      const { Geolocation } = window.Capacitor.Plugins;
-      Geolocation.requestPermissions().then(() => {
-        return Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 });
-      }).then((pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        map.setView([latitude, longitude], 16);
-        if (!state.gpsActive) {
-          state.gpsActive = true;
+    if (!state.gpsActive) {
+      // Request one-time position first — this triggers the Android permission prompt
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude, accuracy } = pos.coords;
           gpsPosition = { lat: latitude, lng: longitude };
           gpsDropBtn.disabled = false;
           saveGpsBtn.disabled = false;
           updateGpsUIFields(latitude, longitude, accuracy);
-          // Start watch
-          Geolocation.watchPosition({ enableHighAccuracy: true }, (p, err) => {
-            if (err) { gpsStatus.textContent = 'error'; gpsDot.className = 'dot no-fix'; return; }
-            const { latitude: lat, longitude: lng, accuracy: acc } = p.coords;
-            gpsPosition = { lat, lng };
-            updateGpsUIFields(lat, lng, acc);
-            updateGpsMarker(L.latLng(lat, lng), acc);
-          }).then(id => { capWatchId = id; });
-        }
-      }).catch((err) => {
-        gpsStatus.textContent = 'error';
-        gpsDot.className = 'dot no-fix';
-        if (typeof err === 'string' && err.includes('denied')) alert('GPS permission denied. Enable in settings.');
-      });
-    } else {
-      // Browser fallback
-      if (!navigator.geolocation) {
-        alert('GPS not available on this device');
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          map.setView([pos.coords.latitude, pos.coords.longitude], 16);
-          if (!state.gpsActive) {
-            gpsWatchId = navigator.geolocation.watchPosition(
-              (p) => updateGpsUI(p),
-              (err) => { gpsStatus.textContent = `error (${err.code})`; gpsDot.className = 'dot no-fix'; },
-              { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-            );
-            state.gpsActive = true;
-          }
+          updateGpsMarker(L.latLng(latitude, longitude), accuracy);
+          map.setView([latitude, longitude], 16);
+          // Start continuous tracking
+          gpsWatchId = navigator.geolocation.watchPosition(
+            (p) => updateGpsUI(p),
+            (err) => { gpsStatus.textContent = `error (${err.code})`; gpsDot.className = 'dot no-fix'; },
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
+          );
+          state.gpsActive = true;
         },
         (err) => {
           gpsStatus.textContent = `error (${err.code})`;
           gpsDot.className = 'dot no-fix';
-          if (err.code === 1) alert('GPS permission denied. Enable location in your device settings.');
-          if (!state.gpsActive) {
-            gpsWatchId = navigator.geolocation.watchPosition(
-              (p) => { updateGpsUI(p); if (gpsPosition) map.setView([gpsPosition.lat, gpsPosition.lng], 16); },
-              (e) => { gpsStatus.textContent = `error (${e.code})`; gpsDot.className = 'dot no-fix'; },
-              { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+          if (err.code === 1) {
+            alert('Location permission denied. Please enable GPS/location in your device settings and try again.');
+          } else if (err.code === 2 || err.code === 3) {
+            // POSITION_UNAVAILABLE or TIMEOUT — try again with longer timeout
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                const { latitude, longitude, accuracy } = pos.coords;
+                gpsPosition = { lat: latitude, lng: longitude };
+                gpsDropBtn.disabled = false;
+                saveGpsBtn.disabled = false;
+                updateGpsUIFields(latitude, longitude, accuracy);
+                updateGpsMarker(L.latLng(latitude, longitude), accuracy);
+                map.setView([latitude, longitude], 16);
+                gpsWatchId = navigator.geolocation.watchPosition(
+                  (p) => updateGpsUI(p),
+                  (e) => { gpsStatus.textContent = `error (${e.code})`; gpsDot.className = 'dot no-fix'; },
+                  { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
+                );
+                state.gpsActive = true;
+              },
+              (e2) => {
+                gpsStatus.textContent = `error (${e2.code})`;
+                gpsDot.className = 'dot no-fix';
+                alert('Unable to get GPS position. Make sure location is enabled in device settings.');
+              },
+              { enableHighAccuracy: true, timeout: 60000, maximumAge: 0 }
             );
-            state.gpsActive = true;
           }
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
       );
+    } else if (gpsPosition) {
+      map.setView([gpsPosition.lat, gpsPosition.lng], Math.max(map.getZoom(), 16));
     }
   }
 
