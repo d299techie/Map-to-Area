@@ -48,6 +48,16 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 .area-stat .value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .area-stat .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
 .area-stat .sub { font-size: 10px; color: #666; }
+.bottom-actions { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+.bottom-actions button { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background .15s; }
+.btn-live { background: #2d6a4f; color: #fff; }
+.btn-live:hover { background: #40916c; }
+.btn-live.recording { background: #e94560; color: #fff; animation: live-pulse 1s infinite; }
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.6); }
+  70% { box-shadow: 0 0 0 8px rgba(233, 69, 96, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0); }
+}
 .hint {
   color: #888; font-size: 12px; padding: 0 16px 6px;
   background: rgba(26, 26, 46, 0.95); position: relative; z-index: 1000;
@@ -103,8 +113,6 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 <header>
   <h1>Map to Area <small>GPS field area measurement</small></h1>
   <div class="controls">
-    <button id="gpsDropBtn" class="btn-success" disabled title="Place a marker at current GPS position">+GPS</button>
-    <button id="gpsLocateBtn" class="btn-gps" title="Locate my position and move map">&#x1F4CD; Locate</button>
     <button id="saveGpsBtn" class="btn-secondary" disabled title="Save current GPS location">&#x1F4CC;</button>
     <button id="drawBtn" class="btn-primary">Start Drawing</button>
     <button id="undoBtn" class="btn-secondary" disabled>Undo</button>
@@ -166,6 +174,11 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
     <span class="label">Points</span>
     <span class="value" id="pointCount">0</span>
   </div>
+  <div class="bottom-actions">
+    <button id="gpsLocateBtn" class="btn-gps" title="Locate my position and move map">&#x1F4CD; Locate</button>
+    <button id="gpsDropBtn" class="btn-success" disabled title="Place a marker at current GPS position">+GPS</button>
+    <button id="liveBtn" class="btn-secondary" disabled title="Auto-draw points as GPS moves">Live</button>
+  </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
@@ -209,7 +222,7 @@ if ('serviceWorker' in navigator) {
     mi: { v: 0.000621371, l: 'mi' },
   };
 
-  const state = { points: [], redoStack: [], drawing: false, gpsActive: false, mode: 'area' };
+  const state = { points: [], redoStack: [], drawing: false, gpsActive: false, live: false, mode: 'area' };
   let drawnLayer, measureLayer, ghostLine, ghostMarker, dragMarkers = [];
   let gpsMarker, gpsAccuracyCircle, gpsWatchId = null;
   let dragIndex = null;
@@ -244,6 +257,7 @@ if ('serviceWorker' in navigator) {
   const gpsLngDisplay = document.getElementById('gpsLngDisplay');
   const gpsAccDisplay = document.getElementById('gpsAccDisplay');
   const gpsDot = document.getElementById('gpsDot');
+  const liveBtn = document.getElementById('liveBtn');
 
   let gpsPosition = null;
 
@@ -477,6 +491,27 @@ if ('serviceWorker' in navigator) {
     redraw();
   }
 
+  function toggleLive() {
+    if (!state.gpsActive) {
+      moveToGps();
+      // Live will start when GPS becomes active — set flag early
+      state.live = true;
+      liveBtn.textContent = 'Live ON';
+      liveBtn.className = 'btn-live recording';
+      return;
+    }
+    state.live = !state.live;
+    if (state.live) {
+      liveBtn.textContent = 'Live ON';
+      liveBtn.className = 'btn-live recording';
+      hintEl.textContent = 'Live tracking active — moving GPS path draws points automatically';
+    } else {
+      liveBtn.textContent = 'Live';
+      liveBtn.className = 'btn-live';
+      hintEl.textContent = state.points.length >= 3 ? 'Drag any point to adjust' : 'Live tracking stopped';
+    }
+  }
+
   // ---- GPS ----
   function updateGpsUI(pos) {
     const lat = pos.coords.latitude;
@@ -487,6 +522,14 @@ if ('serviceWorker' in navigator) {
     updateGpsMarker(L.latLng(lat, lng), acc);
     gpsDropBtn.disabled = false;
     saveGpsBtn.disabled = false;
+    liveBtn.disabled = false;
+    if (state.live) {
+      state.points.push({ lat, lng });
+      state.redoStack = [];
+      redraw();
+      undoBtn.disabled = false;
+      redoBtn.disabled = true;
+    }
     if (map.getZoom() < 5) map.setView(L.latLng(lat, lng), 16);
   }
 
@@ -506,6 +549,8 @@ if ('serviceWorker' in navigator) {
     state.gpsActive = false;
     gpsDropBtn.disabled = true;
     saveGpsBtn.disabled = true;
+    liveBtn.disabled = true;
+    if (state.live) toggleLive();
   }
 
   // ---- Move map to GPS location (auto-starts GPS if needed) ----
@@ -821,6 +866,8 @@ if ('serviceWorker' in navigator) {
       addPoint(L.latLng(gpsPosition.lat, gpsPosition.lng));
     }
   });
+
+  liveBtn.addEventListener('click', toggleLive);
 
   searchBtn.addEventListener('click', searchPlace);
 
