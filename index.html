@@ -48,6 +48,17 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 .area-stat .value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .area-stat .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
 .area-stat .sub { font-size: 10px; color: #666; }
+.points-box { display: flex; align-items: center; gap: 6px; border: 1px solid #444; border-radius: 6px; padding: 2px 8px; }
+.points-box .area-stat { min-width: auto; }
+.points-box .area-stat .value { font-size: 14px; }
+.pts-toggle { position: relative; display: inline-block; width: 32px; height: 18px; cursor: pointer; }
+.pts-toggle input { opacity: 0; width: 0; height: 0; }
+.pts-toggle .slider { position: absolute; inset: 0; background: #555; border-radius: 18px; transition: .2s; }
+.pts-toggle .slider::before { content: ''; position: absolute; left: 2px; bottom: 2px; width: 14px; height: 14px; background: #ccc; border-radius: 50%; transition: .2s; }
+.pts-toggle input:checked + .slider { background: #7c3aed; }
+.pts-toggle input:checked + .slider::before { transform: translateX(14px); background: #fff; }
+.search-input { padding: 4px 8px; border: 1px solid #444; border-radius: 4px; font-size: 12px; background: #16213e; color: #eee; width: 150px; outline: none; flex-shrink: 0; }
+.search-input::placeholder { color: #666; }
 .bottom-actions { display: flex; gap: 6px; align-items: center; margin-left: auto; }
 .bottom-actions button { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background .15s; }
 .btn-live { background: #2d6a4f; color: #fff; }
@@ -113,37 +124,34 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 <header>
   <h1>Map to Area <small>GPS field area measurement</small></h1>
   <div class="controls">
-    <button id="saveGpsBtn" class="btn-secondary" disabled title="Save current GPS location">&#x1F4CC;</button>
-    <button id="drawBtn" class="btn-primary">Start Drawing</button>
-    <button id="undoBtn" class="btn-secondary" disabled>Undo</button>
-    <button id="redoBtn" class="btn-secondary" disabled>Redo</button>
-    <button id="clearBtn" class="btn-danger" disabled>Clear</button>
     <button id="modeBtn" class="btn-mode active">Area</button>
     <select id="unitSelect">
-      <option value="sqm">m&sup2;</option>
-      <option value="sqkm" selected>km&sup2;</option>
-      <option value="ha">Hectares</option>
-      <option value="acre">Acres</option>
+      <option value="sqft" selected>ft&sup2;</option>
       <option value="cent">Cents</option>
-      <option value="kaani">Kaani</option>
-      <option value="sqft">ft&sup2;</option>
-      <option value="sqmi">mi&sup2;</option>
+      <option value="acre">Acres</option>
+      <option value="sqm">m&sup2;</option>
+      <option value="are">Are</option>
+      <option value="ha">Hectares</option>
+      <option value="sqkm">km&sup2;</option>
       <option value="sqyd">yd&sup2;</option>
+      <option value="sqmi">mi&sup2;</option>
     </select>
     <select id="lenUnitSelect">
+      <option value="ft" selected>ft</option>
       <option value="m">m</option>
-      <option value="km" selected>km</option>
-      <option value="ft">ft</option>
+      <option value="km">km</option>
       <option value="yd">yd</option>
       <option value="mi">mi</option>
     </select>
+  </div>
+  <div class="controls">
+    <button id="drawBtn" class="btn-primary">Start Drawing</button>
+    <button id="undoBtn" class="btn-secondary" disabled title="Undo last point">&#x2190; Undo</button>
+    <button id="redoBtn" class="btn-secondary" disabled title="Redo last undone point">Redo &#x2192;</button>
+    <button id="clearBtn" class="btn-danger" disabled>Clear</button>
     <button id="saveMapBtn" class="btn-secondary" title="Save map markings" disabled>&#x1F4BE; Save</button>
     <button id="loadMapBtn" class="btn-secondary" title="Open saved map">&#x1F4C2; Open</button>
     <button id="screenshotBtn" class="btn-secondary" title="Take screenshot">&#x1F4F7;</button>
-    <div class="search-box">
-      <input id="searchInput" type="text" placeholder="Search place..." />
-      <button id="searchBtn" class="btn-primary">Go</button>
-    </div>
   </div>
 </header>
 <div id="map"></div>
@@ -170,10 +178,18 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
     <span class="value" id="lengthValue">&mdash;</span>
     <span class="sub" id="lengthSub">m</span>
   </div>
-  <div class="area-stat">
-    <span class="label">Points</span>
-    <span class="value" id="pointCount">0</span>
+  <div class="points-box">
+    <div class="area-stat">
+      <span class="label">Points</span>
+      <span class="value" id="pointCount">0</span>
+    </div>
+    <label class="pts-toggle">
+      <input type="checkbox" id="ptsCheckbox" checked>
+      <span class="slider"></span>
+    </label>
   </div>
+  <input id="searchInput" type="text" placeholder="Search place..." class="search-input" />
+  <button id="saveGpsBtn" class="btn-secondary" disabled title="Save current GPS location">&#x1F4CC;</button>
   <div class="bottom-actions">
     <button id="gpsLocateBtn" class="btn-gps" title="Locate my position and move map">&#x1F4CD; Locate</button>
     <button id="gpsDropBtn" class="btn-success" disabled title="Place a marker at current GPS position">+GPS</button>
@@ -203,13 +219,13 @@ if ('serviceWorker' in navigator) {
   }).addTo(map);
 
   const AREA_UNITS = {
-    sqm: { v: 1, l: 'm\u00b2' },
-    sqkm: { v: 1e-6, l: 'km\u00b2' },
-    ha: { v: 1e-4, l: 'ha' },
     acre: { v: 0.000247105, l: 'acres' },
     cent: { v: 0.0247105, l: 'cents' },
-    kaani: { v: 0.00032618, l: 'kaani' },
     sqft: { v: 10.7639, l: 'ft\u00b2' },
+    ha: { v: 1e-4, l: 'ha' },
+    are: { v: 0.01, l: 'are' },
+    sqkm: { v: 1e-6, l: 'km\u00b2' },
+    sqm: { v: 1, l: 'm\u00b2' },
     sqmi: { v: 3.861e-7, l: 'mi\u00b2' },
     sqyd: { v: 1.19599, l: 'yd\u00b2' },
   };
@@ -222,7 +238,7 @@ if ('serviceWorker' in navigator) {
     mi: { v: 0.000621371, l: 'mi' },
   };
 
-  const state = { points: [], redoStack: [], drawing: false, gpsActive: false, live: false, mode: 'area' };
+  const state = { points: [], redoStack: [], drawing: false, gpsActive: false, live: false, showPoints: true, mode: 'area' };
   let drawnLayer, measureLayer, ghostLine, ghostMarker, dragMarkers = [];
   let gpsMarker, gpsAccuracyCircle, gpsWatchId = null;
   let dragIndex = null;
@@ -244,6 +260,7 @@ if ('serviceWorker' in navigator) {
   const undoBtn = document.getElementById('undoBtn');
   const redoBtn = document.getElementById('redoBtn');
   const clearBtn = document.getElementById('clearBtn');
+  const ptsCheckbox = document.getElementById('ptsCheckbox');
   const modeBtn = document.getElementById('modeBtn');
   const unitSelect = document.getElementById('unitSelect');
   const lenUnitSelect = document.getElementById('lenUnitSelect');
@@ -251,7 +268,6 @@ if ('serviceWorker' in navigator) {
   const loadMapBtn = document.getElementById('loadMapBtn');
   const screenshotBtn = document.getElementById('screenshotBtn');
   const searchInput = document.getElementById('searchInput');
-  const searchBtn = document.getElementById('searchBtn');
   const gpsStatus = document.getElementById('gpsStatus');
   const gpsLatDisplay = document.getElementById('gpsLatDisplay');
   const gpsLngDisplay = document.getElementById('gpsLngDisplay');
@@ -392,11 +408,13 @@ if ('serviceWorker' in navigator) {
 
     measureLayer = L.layerGroup().addTo(map);
     pts.forEach((p, i) => {
-      const marker = L.circleMarker([p.lat, p.lng], {
-        radius: 7, color: '#e94560', fillColor: '#ff6b81',
-        fillOpacity: 1, weight: 2,
-      }).addTo(measureLayer);
-      marker.bindTooltip(`${i + 1}`, { permanent: true, direction: 'top', offset: [0, -10], className: 'point-label' });
+      if (state.showPoints) {
+        const marker = L.circleMarker([p.lat, p.lng], {
+          radius: 7, color: '#e94560', fillColor: '#ff6b81',
+          fillOpacity: 1, weight: 2,
+        }).addTo(measureLayer);
+        marker.bindTooltip(`${i + 1}`, { permanent: true, direction: 'top', offset: [0, -10], className: 'point-label' });
+      }
 
       const dragMarker = L.marker([p.lat, p.lng], {
         icon: L.divIcon({
@@ -488,6 +506,11 @@ if ('serviceWorker' in navigator) {
       modeBtn.textContent = 'Area';
       modeBtn.classList.add('active');
     }
+    redraw();
+  }
+
+  function togglePoints() {
+    state.showPoints = ptsCheckbox.checked;
     redraw();
   }
 
@@ -653,20 +676,26 @@ if ('serviceWorker' in navigator) {
     alert(`Saved: ${name}`);
   }
 
-  // ---- 1b: Search place ----
+  // ---- Auto-search place with debounce ----
+  let searchTimeout = null;
   function searchPlace() {
     const q = searchInput.value.trim();
     if (!q) return;
     fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`)
       .then(r => r.json())
       .then(data => {
-        if (data.length === 0) { alert('Place not found'); return; }
+        if (data.length === 0) { return; }
         const { lat, lon, display_name } = data[0];
         map.setView([lat, lon], 16);
         hintEl.textContent = display_name;
       })
-      .catch(() => alert('Search failed. Check internet connection.'));
+      .catch(() => {});
   }
+
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(searchPlace, 600);
+  });
 
   // ---- 2b: Screenshot ----
   function takeScreenshot() {
@@ -843,9 +872,6 @@ if ('serviceWorker' in navigator) {
       e.preventDefault();
       addPoint(L.latLng(gpsPosition.lat, gpsPosition.lng));
     }
-    if (e.key === 'Enter' && document.activeElement === searchInput) {
-      searchPlace();
-    }
   });
 
   drawBtn.addEventListener('click', () => {
@@ -868,13 +894,11 @@ if ('serviceWorker' in navigator) {
   });
 
   liveBtn.addEventListener('click', toggleLive);
-
-  searchBtn.addEventListener('click', searchPlace);
-
   undoBtn.addEventListener('click', undoPoint);
   redoBtn.addEventListener('click', redoPoint);
   clearBtn.addEventListener('click', clearAll);
   modeBtn.addEventListener('click', toggleMode);
+  ptsCheckbox.addEventListener('change', togglePoints);
   unitSelect.addEventListener('change', updateUI);
   lenUnitSelect.addEventListener('change', updateUI);
 
