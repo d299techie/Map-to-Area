@@ -103,9 +103,8 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
 <header>
   <h1>Map to Area <small>GPS field area measurement</small></h1>
   <div class="controls">
-    <button id="gpsBtn" class="btn-gps" title="Track GPS position">&#x1F4CD; GPS</button>
     <button id="gpsDropBtn" class="btn-success" disabled title="Place a marker at current GPS position">+GPS</button>
-    <button id="gpsLocateBtn" class="btn-gps" disabled title="Move map to current GPS location">&#x1F4CD;&#x2192;</button>
+    <button id="gpsLocateBtn" class="btn-gps" title="Locate my position and move map">&#x1F4CD; Locate</button>
     <button id="saveGpsBtn" class="btn-secondary" disabled title="Save current GPS location">&#x1F4CC;</button>
     <button id="drawBtn" class="btn-primary">Start Drawing</button>
     <button id="undoBtn" class="btn-secondary" disabled>Undo</button>
@@ -226,7 +225,6 @@ if ('serviceWorker' in navigator) {
   const pointCountEl = document.getElementById('pointCount');
   const hintEl = document.getElementById('hint');
   const drawBtn = document.getElementById('drawBtn');
-  const gpsBtn = document.getElementById('gpsBtn');
   const gpsDropBtn = document.getElementById('gpsDropBtn');
   const gpsLocateBtn = document.getElementById('gpsLocateBtn');
   const saveGpsBtn = document.getElementById('saveGpsBtn');
@@ -519,26 +517,6 @@ if ('serviceWorker' in navigator) {
     if (map.getZoom() < 5) map.setView(latlng, 16);
   }
 
-  function startGps() {
-    if (!navigator.geolocation) {
-      alert('GPS not available on this device');
-      return;
-    }
-    gpsBtn.classList.add('active');
-    gpsBtn.textContent = '\uD83D\uDCCD GPS ON';
-    gpsStatus.textContent = 'searching...';
-
-    gpsWatchId = navigator.geolocation.watchPosition(
-      (pos) => updateGpsUI(pos),
-      (err) => {
-        gpsStatus.textContent = `error (${err.code})`;
-        gpsDot.className = 'dot no-fix';
-      },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-    );
-    state.gpsActive = true;
-  }
-
   function stopGps() {
     if (gpsWatchId !== null) {
       navigator.geolocation.clearWatch(gpsWatchId);
@@ -546,8 +524,6 @@ if ('serviceWorker' in navigator) {
     }
     if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
     if (gpsAccuracyCircle) { map.removeLayer(gpsAccuracyCircle); gpsAccuracyCircle = null; }
-    gpsBtn.classList.remove('active');
-    gpsBtn.textContent = '\uD83D\uDCCD GPS';
     gpsStatus.textContent = 'off';
     gpsDot.className = 'dot no-fix';
     gpsLatDisplay.textContent = 'Lat: \u2014';
@@ -556,19 +532,61 @@ if ('serviceWorker' in navigator) {
     gpsPosition = null;
     state.gpsActive = false;
     gpsDropBtn.disabled = true;
-    gpsLocateBtn.disabled = true;
     saveGpsBtn.disabled = true;
   }
 
-  function toggleGps() {
-    if (state.gpsActive) { stopGps(); }
-    else { startGps(); }
-  }
-
-  // ---- 1a: Move map to GPS location ----
+  // ---- Move map to GPS location (auto-starts GPS if needed) ----
   function moveToGps() {
-    if (!gpsPosition) return;
-    map.setView([gpsPosition.lat, gpsPosition.lng], Math.max(map.getZoom(), 16));
+    if (!navigator.geolocation) {
+      alert('GPS not available on this device');
+      return;
+    }
+
+    if (!state.gpsActive) {
+      gpsStatus.textContent = 'searching...';
+      gpsDot.className = 'dot no-fix';
+
+      // Request one-time position first to trigger permission prompt
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          map.setView([pos.coords.latitude, pos.coords.longitude], 16);
+          // Start continuous tracking after first fix
+          if (!state.gpsActive) {
+            gpsWatchId = navigator.geolocation.watchPosition(
+              (p) => updateGpsUI(p),
+              (err) => {
+                gpsStatus.textContent = `error (${err.code})`;
+                gpsDot.className = 'dot no-fix';
+              },
+              { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+            );
+            state.gpsActive = true;
+          }
+        },
+        (err) => {
+          gpsStatus.textContent = `error (${err.code})`;
+          gpsDot.className = 'dot no-fix';
+          // Fallback: try watchPosition anyway (some Android WebView needs this)
+          if (!state.gpsActive) {
+            gpsWatchId = navigator.geolocation.watchPosition(
+              (p) => {
+                updateGpsUI(p);
+                if (gpsPosition) map.setView([gpsPosition.lat, gpsPosition.lng], 16);
+              },
+              (e) => {
+                gpsStatus.textContent = `error (${e.code})`;
+                gpsDot.className = 'dot no-fix';
+              },
+              { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+            );
+            state.gpsActive = true;
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    } else if (gpsPosition) {
+      map.setView([gpsPosition.lat, gpsPosition.lng], Math.max(map.getZoom(), 16));
+    }
   }
 
   // ---- 2a: Save GPS location ----
@@ -786,7 +804,6 @@ if ('serviceWorker' in navigator) {
     }
   });
 
-  gpsBtn.addEventListener('click', toggleGps);
   gpsLocateBtn.addEventListener('click', moveToGps);
   saveGpsBtn.addEventListener('click', saveCurrentGps);
 
