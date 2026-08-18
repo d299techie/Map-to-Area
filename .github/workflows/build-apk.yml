@@ -35,8 +35,9 @@ jobs:
 
       - name: Prepare www directory for Capacitor
         run: |
-          mkdir -p www
+          mkdir -p www/vendor
           cp index.html manifest.json sw.js www/
+          cp vendor/*.js www/vendor/
 
       - name: Add Android platform
         run: |

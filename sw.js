@@ -1,5 +1,9 @@
-const CACHE = 'map2area-v1';
-const URLS = ['index.html', 'manifest.json'];
+const CACHE = 'map2area-v2';
+const URLS = [
+  'index.html', 'manifest.json',
+  'vendor/capacitor.js', 'vendor/filesystem.js', 'vendor/share.js',
+  'vendor/html2canvas.min.js',
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

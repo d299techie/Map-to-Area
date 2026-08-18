@@ -7,6 +7,10 @@
 <title>Map to Area</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="vendor/capacitor.js"></script>
+<script src="vendor/filesystem.js"></script>
+<script src="vendor/share.js"></script>
+<script src="vendor/html2canvas.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -195,11 +199,12 @@ header h1 small { font-size: 11px; color: #888; font-weight: 400; display: block
     </label>
   </div>
   <div class="search-wrap">
-    <input id="searchInput" type="text" placeholder="Search place or lat,lng..." class="search-input" />
+    <input id="searchInput" type="text" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search place or lat,lng..." class="search-input" />
     <div id="searchResults" class="search-results"></div>
     <button id="searchGoBtn" class="btn-primary" title="Go to selected place or coordinate">Go</button>
   </div>
   <button id="saveGpsBtn" class="btn-secondary" disabled title="Save current GPS location">&#x1F4CC;</button>
+  <button id="pinsBtn" class="btn-secondary" title="Saved locations">&#x1F4CD;</button>
   <div class="bottom-actions">
     <button id="gpsLocateBtn" class="btn-gps" title="Locate my position and move map">&#x1F4CD; Locate</button>
     <button id="gpsDropBtn" class="btn-success" disabled title="Place a marker at current GPS position">+GPS</button>
@@ -221,11 +226,17 @@ if ('serviceWorker' in navigator) {
   const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; Esri, Maxar, Earthstar Geographics',
     maxZoom: 22,
+    maxNativeZoom: 19,
+    crossOrigin: 'anonymous',
+    updateWhenIdle: true,
   }).addTo(map);
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OSM, CARTO',
-    maxZoom: 22, subdomains: 'abcd',
+    maxZoom: 22,
+    maxNativeZoom: 19,
+    crossOrigin: 'anonymous',
+    subdomains: 'abcd',
   }).addTo(map);
 
   const AREA_UNITS = {
@@ -252,7 +263,69 @@ if ('serviceWorker' in navigator) {
   let drawnLayer, measureLayer, ghostLine, ghostMarker, dragMarkers = [];
   let gpsMarker, gpsAccuracyCircle, gpsWatchId = null;
   let dragIndex = null;
-  let savedGpsPoints = JSON.parse(localStorage.getItem('maparea_saved_gps') || '[]');
+
+  // ---- Persistent JSON storage (app Documents folder on Android, localStorage fallback on web) ----
+  const Store = (() => {
+    const FS = window.capacitorFilesystem && window.capacitorFilesystem.Filesystem;
+    const Dir = window.capacitorFilesystem && window.capacitorFilesystem.Directory;
+    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    const FILE = 'maparea_data.json';
+    const cache = { pins: [], maps: {} };
+
+    function loadLocal() {
+      let pins = [], maps = {};
+      try { pins = JSON.parse(localStorage.getItem('maparea_saved_gps') || '[]'); } catch {}
+      try { maps = JSON.parse(localStorage.getItem('maparea_saved_maps') || '{}'); } catch {}
+      return { pins, maps };
+    }
+
+    async function persist() {
+      try {
+        localStorage.setItem('maparea_saved_gps', JSON.stringify(cache.pins));
+        localStorage.setItem('maparea_saved_maps', JSON.stringify(cache.maps));
+      } catch {}
+      if (!isNative || !FS) return;
+      try {
+        await FS.writeFile({
+          path: FILE, directory: Dir.Documents,
+          data: JSON.stringify(cache, null, 2), encoding: 'utf8', recursive: true,
+        });
+      } catch (e) { console.warn('Storage write failed', e); }
+    }
+
+    async function init() {
+      cache.pins = [];
+      cache.maps = {};
+      if (isNative && FS) {
+        try {
+          const r = await FS.readFile({ path: FILE, directory: Dir.Documents, encoding: 'utf8' });
+          const data = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+          cache.pins = data.pins || [];
+          cache.maps = data.maps || {};
+        } catch {}
+      }
+      // Merge any localStorage entries that are not yet in the file
+      const local = loadLocal();
+      local.pins.forEach(p => {
+        if (!cache.pins.some(x => x.name === p.name && x.lat === p.lat && x.lng === p.lng)) cache.pins.push(p);
+      });
+      Object.keys(local.maps).forEach(name => {
+        if (!cache.maps[name]) cache.maps[name] = local.maps[name];
+      });
+      await persist();
+    }
+
+    return {
+      init, persist,
+      get pins() { return cache.pins; },
+      get maps() { return cache.maps; },
+      isNative,
+      addPin(pin) { cache.pins.push(pin); return persist(); },
+      removePin(index) { cache.pins.splice(index, 1); return persist(); },
+      setMap(name, data) { cache.maps[name] = data; return persist(); },
+      deleteMap(name) { delete cache.maps[name]; return persist(); },
+    };
+  })();
 
   const primaryEl = document.getElementById('primaryValue');
   const primarySubEl = document.getElementById('primarySub');
@@ -286,6 +359,7 @@ if ('serviceWorker' in navigator) {
   const gpsAccDisplay = document.getElementById('gpsAccDisplay');
   const gpsDot = document.getElementById('gpsDot');
   const liveBtn = document.getElementById('liveBtn');
+  const pinsBtn = document.getElementById('pinsBtn');
 
   let gpsPosition = null;
 
@@ -678,19 +752,79 @@ if ('serviceWorker' in navigator) {
     }
   }
 
-  // ---- 2a: Save GPS location ----
-  function saveCurrentGps() {
+  // ---- 2a: Save GPS location (pin) ----
+  async function saveCurrentGps() {
     if (!gpsPosition) return;
-    const name = prompt('Name this GPS location:', `Point ${savedGpsPoints.length + 1}`);
+    const name = prompt('Name this GPS location:', `Point ${Store.pins.length + 1}`);
     if (!name) return;
-    savedGpsPoints.push({ name, lat: gpsPosition.lat, lng: gpsPosition.lng });
-    localStorage.setItem('maparea_saved_gps', JSON.stringify(savedGpsPoints));
-    alert(`Saved: ${name}`);
+    await Store.addPin({ name, lat: gpsPosition.lat, lng: gpsPosition.lng });
+    hintEl.textContent = `Saved: ${name}`;
+    setTimeout(() => { hintEl.textContent = defaultHint(); }, 3000);
   }
 
-  // ---- Search with suggestions and Go button ----
+  function defaultHint() {
+    if (state.live) return 'Live tracking active \u2014 moving GPS path draws points automatically';
+    return state.points.length >= 3 ? 'Drag any point to adjust' : 'Click on the map to place points and form a polygon';
+  }
+
+  // ---- Saved locations modal ----
+  function showSavedLocations() {
+    const pins = Store.pins;
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#1a1a2e;color:#eee;padding:20px;border-radius:8px;max-width:90vw;max-height:80vh;overflow-y:auto';
+    box.innerHTML = '<h3 style="margin-bottom:10px">Saved Locations</h3>';
+    if (pins.length === 0) {
+      const msg = document.createElement('div');
+      msg.textContent = 'No saved locations yet. Use the pin button with a GPS fix to save one.';
+      msg.style.cssText = 'font-size:12px;color:#888;margin-bottom:10px';
+      box.appendChild(msg);
+    }
+    pins.forEach((pin, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #333';
+      const label = document.createElement('span');
+      label.textContent = `${pin.name} (${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)})`;
+      label.style.cssText = 'flex:1;font-size:12px';
+      const goBtn = document.createElement('button');
+      goBtn.textContent = 'Go';
+      goBtn.className = 'btn-primary';
+      goBtn.style.cssText = 'padding:3px 8px;border:none;border-radius:4px;cursor:pointer;font-size:11px';
+      const delBtn = document.createElement('button');
+      delBtn.textContent = 'Delete';
+      delBtn.className = 'btn-danger';
+      delBtn.style.cssText = 'padding:3px 8px;border:none;border-radius:4px;cursor:pointer;font-size:11px';
+      row.appendChild(label);
+      row.appendChild(goBtn);
+      row.appendChild(delBtn);
+      box.appendChild(row);
+
+      goBtn.addEventListener('click', () => {
+        map.setView([pin.lat, pin.lng], 16);
+        hintEl.textContent = pin.name;
+        div.remove();
+      });
+      delBtn.addEventListener('click', async () => {
+        const idx = Store.pins.indexOf(pin);
+        if (idx >= 0) await Store.removePin(idx);
+        row.remove();
+      });
+    });
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Close';
+    closeBtn.className = 'btn-secondary';
+    closeBtn.style.cssText = 'margin-top:10px;padding:5px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px';
+    closeBtn.addEventListener('click', () => div.remove());
+    box.appendChild(closeBtn);
+    div.appendChild(box);
+    document.body.appendChild(div);
+  }
+
+  // ---- Search with suggestions; typing shows matches, clicking / Enter moves the map ----
   let searchTimeout = null;
   let searchData = [];
+  let selectedIdx = -1;
 
   function doSearch(query) {
     return fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1`)
@@ -715,31 +849,54 @@ if ('serviceWorker' in navigator) {
     return null;
   }
 
+  function flyToData(item) {
+    const lat = parseFloat(item.lat);
+    const lng = parseFloat(item.lon);
+    if (isNaN(lat) || isNaN(lng)) return;
+    map.setView([lat, lng], 16);
+    hintEl.textContent = item.display_name;
+    searchInput.value = item.display_name;
+    hideSuggestions();
+  }
+
+  function hideSuggestions() {
+    searchResults.style.display = 'none';
+    selectedIdx = -1;
+  }
+
   function showSuggestions(data) {
     searchData = data;
+    selectedIdx = -1;
     searchResults.innerHTML = '';
     if (data.length === 0) {
-      searchResults.style.display = 'none';
+      hideSuggestions();
       return;
     }
     data.forEach((item, i) => {
       const div = document.createElement('div');
       div.textContent = item.display_name;
-      div.addEventListener('click', () => {
-        searchInput.value = item.display_name;
-        searchResults.style.display = 'none';
-      });
+      div.addEventListener('mousedown', (e) => e.preventDefault());
+      div.addEventListener('click', () => flyToData(item));
       searchResults.appendChild(div);
     });
     searchResults.style.display = 'block';
   }
 
   function goToSelected() {
-    searchResults.style.display = 'none';
     const val = searchInput.value.trim();
     if (!val) return;
 
-    // Check if it's coordinates first
+    if (searchResults.style.display === 'block') {
+      if (selectedIdx >= 0 && selectedIdx < searchData.length) {
+        flyToData(searchData[selectedIdx]);
+      } else if (searchData.length > 0) {
+        flyToData(searchData[0]);
+      }
+      hideSuggestions();
+      if (val) searchInput.blur();
+      return;
+    }
+
     if (isCoordInput(val)) {
       const coord = parseCoord(val);
       if (coord) {
@@ -749,35 +906,26 @@ if ('serviceWorker' in navigator) {
       }
     }
 
-    // Check if the current value matches a selected suggestion
     const match = searchData.find(d => d.display_name === val);
     if (match) {
-      map.setView([match.lat, match.lon], 16);
-      hintEl.textContent = match.display_name;
+      flyToData(match);
       return;
     }
 
-    // Otherwise, do a direct search and move to first result
+    hintEl.textContent = 'Searching\u2026';
     doSearch(val).then(data => {
       if (data.length === 0) {
         hintEl.textContent = 'Place not found';
         return;
       }
-      const { lat, lon, display_name } = data[0];
-      map.setView([lat, lon], 16);
-      hintEl.textContent = display_name;
-    }).catch(() => {});
+      flyToData(data[0]);
+    }).catch(() => { hintEl.textContent = 'Search failed \u2014 check connection'; });
   }
 
   searchInput.addEventListener('input', () => {
     const val = searchInput.value.trim();
-    if (val.length < 2) {
-      searchResults.style.display = 'none';
-      searchData = [];
-      return;
-    }
-    if (isCoordInput(val)) {
-      searchResults.style.display = 'none';
+    if (val.length < 2 || isCoordInput(val)) {
+      hideSuggestions();
       searchData = [];
       return;
     }
@@ -789,7 +937,16 @@ if ('serviceWorker' in navigator) {
 
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      e.preventDefault();
       goToSelected();
+    } else if (e.key === 'ArrowDown' && searchResults.style.display === 'block') {
+      e.preventDefault();
+      selectedIdx = Math.min(selectedIdx + 1, searchData.length - 1);
+      [...searchResults.children].forEach((c, i) => c.classList.toggle('selected', i === selectedIdx));
+    } else if (e.key === 'ArrowUp' && searchResults.style.display === 'block') {
+      e.preventDefault();
+      selectedIdx = Math.max(selectedIdx - 1, 0);
+      [...searchResults.children].forEach((c, i) => c.classList.toggle('selected', i === selectedIdx));
     }
   });
 
@@ -798,52 +955,75 @@ if ('serviceWorker' in navigator) {
   // Close suggestions on click outside
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-wrap')) {
-      searchResults.style.display = 'none';
+      hideSuggestions();
     }
   });
 
-  // ---- 2b: Screenshot ----
-  function takeScreenshot() {
-    const svgEl = document.querySelector('.leaflet-control-zoom');
-    if (svgEl) svgEl.style.display = 'none';
-    const mapContainer = document.getElementById('map');
+  // ---- 2b: Screenshot (works on Android via Filesystem + Share) ----
+  async function takeScreenshot() {
+    if (typeof html2canvas === 'undefined') {
+      alert('Screenshot library not loaded.');
+      return;
+    }
+    const zoomCtrl = document.querySelector('.leaflet-control-zoom');
     const oldHint = hintEl.textContent;
-    hintEl.textContent = 'Screenshot saved to Downloads';
-    import('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js').then(() => {
-      html2canvas(document.body, { useCORS: true, scale: 2, backgroundColor: '#0d1b2a' }).then(canvas => {
-        if (svgEl) svgEl.style.display = '';
-        const link = document.createElement('a');
-        link.download = `map-${Date.now()}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-        setTimeout(() => { hintEl.textContent = oldHint; }, 3000);
-      }).catch(() => {
-        if (svgEl) svgEl.style.display = '';
-        hintEl.textContent = oldHint;
-        alert('Screenshot failed');
+    if (zoomCtrl) zoomCtrl.style.display = 'none';
+    hideSuggestions();
+    hintEl.textContent = 'Capturing\u2026';
+
+    try {
+      const canvas = await html2canvas(document.body, {
+        useCORS: true, allowTaint: false, scale: 2, backgroundColor: '#0d1b2a',
+        logging: false,
       });
-    }).catch(() => {
-      if (svgEl) svgEl.style.display = '';
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64 = dataUrl.split(',')[1];
+      const filename = `map-${Date.now()}.png`;
+
+      if (Store.isNative && window.capacitorFilesystem && window.capacitorShare) {
+        const FS = window.capacitorFilesystem.Filesystem;
+        const Dir = window.capacitorFilesystem.Directory;
+        const path = `maparea/screenshots/${filename}`;
+        await FS.writeFile({ path, directory: Dir.Documents, data: base64 });
+        const savedPath = await FS.getUri({ path, directory: Dir.Documents });
+        const share = window.capacitorShare.Share;
+        await share.share({
+          title: 'Map Screenshot',
+          files: [savedPath.uri],
+          dialogTitle: 'Save or share screenshot',
+        });
+        hintEl.textContent = 'Screenshot saved';
+      } else {
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = dataUrl;
+        link.click();
+        hintEl.textContent = 'Screenshot saved to Downloads';
+      }
+    } catch (err) {
+      console.error('Screenshot error', err);
+      if (zoomCtrl) zoomCtrl.style.display = '';
       hintEl.textContent = oldHint;
-      alert('Failed to load screenshot library.');
-    });
+      alert('Screenshot failed' + (err && err.message ? `: ${err.message}` : ''));
+      return;
+    }
+    if (zoomCtrl) zoomCtrl.style.display = '';
+    setTimeout(() => { hintEl.textContent = defaultHint(); }, 3000);
   }
 
-  // ---- 2c: Save/Load map markings ----
-  function saveMap() {
+  // ---- 2c: Save/Load map markings (JSON file on Android) ----
+  async function saveMap() {
     if (state.points.length === 0) return;
     const name = prompt('Name this map:', `Map ${Date.now()}`);
     if (!name) return;
     const data = { name, points: state.points, areaUnit: unitSelect.value, lenUnit: lenUnitSelect.value, mode: state.mode };
-    const stored = JSON.parse(localStorage.getItem('maparea_saved_maps') || '{}');
-    stored[name] = data;
-    localStorage.setItem('maparea_saved_maps', JSON.stringify(stored));
-    alert(`Saved: ${name}`);
+    await Store.setMap(name, data);
+    hintEl.textContent = `Saved map: ${name}`;
+    setTimeout(() => { hintEl.textContent = defaultHint(); }, 3000);
   }
 
   function loadMap() {
-    const stored = JSON.parse(localStorage.getItem('maparea_saved_maps') || '{}');
-    const names = Object.keys(stored);
+    const names = Object.keys(Store.maps);
     if (names.length === 0) { alert('No saved maps'); return; }
 
     const div = document.createElement('div');
@@ -854,8 +1034,9 @@ if ('serviceWorker' in navigator) {
     names.forEach(name => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #333';
+      const data = Store.maps[name];
       const label = document.createElement('span');
-      label.textContent = name;
+      label.textContent = data && data.mode === 'length' ? `${name} (length)` : name;
       label.style.cssText = 'flex:1;font-size:13px';
       const openBtn = document.createElement('button');
       openBtn.textContent = 'Open';
@@ -871,7 +1052,7 @@ if ('serviceWorker' in navigator) {
       box.appendChild(row);
 
       openBtn.addEventListener('click', () => {
-        const data = stored[name];
+        const data = Store.maps[name];
         state.points = data.points.map(p => ({ lat: p.lat, lng: p.lng }));
         state.redoStack = [];
         if (data.areaUnit) unitSelect.value = data.areaUnit;
@@ -897,11 +1078,10 @@ if ('serviceWorker' in navigator) {
         drawBtn.className = 'btn-primary';
         div.remove();
       });
-      delBtn.addEventListener('click', () => {
-        delete stored[name];
-        localStorage.setItem('maparea_saved_maps', JSON.stringify(stored));
+      delBtn.addEventListener('click', async () => {
+        await Store.deleteMap(name);
         row.remove();
-        if (Object.keys(stored).length === 0) div.remove();
+        if (Object.keys(Store.maps).length === 0) div.remove();
       });
     });
     const closeBtn = document.createElement('button');
@@ -1010,6 +1190,9 @@ if ('serviceWorker' in navigator) {
   saveMapBtn.addEventListener('click', saveMap);
   loadMapBtn.addEventListener('click', loadMap);
   screenshotBtn.addEventListener('click', takeScreenshot);
+  pinsBtn.addEventListener('click', showSavedLocations);
+
+  Store.init();
 
   enableDrawing();
 })();
