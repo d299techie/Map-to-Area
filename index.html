@@ -7,10 +7,22 @@
 <title>Map to Area</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="vendor/capacitor.js"></script>
-<script src="vendor/filesystem.js"></script>
-<script src="vendor/share.js"></script>
-<script src="vendor/html2canvas.min.js"></script>
+<script>
+// Detect native Capacitor bridge — skip vendor web-fallback scripts on native
+(function(){
+  var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) ||
+    !!(window.androidBridge) ||
+    !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge);
+  if (!isNative) {
+    document.write('<script src="vendor/capacitor.js"><\/script>');
+    document.write('<script src="vendor/filesystem.js"><\/script>');
+    document.write('<script src="vendor/share.js"><\/script>');
+    document.write('<script src="vendor/html2canvas.min.js"><\/script>');
+  } else {
+    document.write('<script src="vendor/html2canvas.min.js"><\/script>');
+  }
+})();
+</script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -266,9 +278,12 @@ if ('serviceWorker' in navigator) {
 
   // ---- Persistent JSON storage (app Documents folder on Android, localStorage fallback on web) ----
   const Store = (() => {
-    const FS = window.capacitorFilesystem && window.capacitorFilesystem.Filesystem;
-    const Dir = window.capacitorFilesystem && window.capacitorFilesystem.Directory;
     const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    // On native Android, plugins come from the native bridge. On web, they come from vendor/ scripts.
+    const FS = isNative ? (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) : (window.capacitorFilesystem && window.capacitorFilesystem.Filesystem);
+    const Dir = isNative ? null : (window.capacitorFilesystem && window.capacitorFilesystem.Directory);
+    // For Directory enum, use the string literals directly
+    const DirDocuments = 'DOCUMENTS';
     const FILE = 'maparea_data.json';
     const cache = { pins: [], maps: {} };
 
@@ -287,7 +302,7 @@ if ('serviceWorker' in navigator) {
       if (!isNative || !FS) return;
       try {
         await FS.writeFile({
-          path: FILE, directory: Dir.Documents,
+          path: FILE, directory: DirDocuments,
           data: JSON.stringify(cache, null, 2), encoding: 'utf8', recursive: true,
         });
       } catch (e) { console.warn('Storage write failed', e); }
@@ -298,7 +313,7 @@ if ('serviceWorker' in navigator) {
       cache.maps = {};
       if (isNative && FS) {
         try {
-          const r = await FS.readFile({ path: FILE, directory: Dir.Documents, encoding: 'utf8' });
+          const r = await FS.readFile({ path: FILE, directory: DirDocuments, encoding: 'utf8' });
           const data = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
           cache.pins = data.pins || [];
           cache.maps = data.maps || {};
@@ -980,13 +995,14 @@ if ('serviceWorker' in navigator) {
       const base64 = dataUrl.split(',')[1];
       const filename = `map-${Date.now()}.png`;
 
-      if (Store.isNative && window.capacitorFilesystem && window.capacitorShare) {
-        const FS = window.capacitorFilesystem.Filesystem;
-        const Dir = window.capacitorFilesystem.Directory;
+      if (Store.isNative) {
+        const FS = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) ||
+                   (window.capacitorFilesystem && window.capacitorFilesystem.Filesystem);
         const path = `maparea/screenshots/${filename}`;
-        await FS.writeFile({ path, directory: Dir.Documents, data: base64 });
-        const savedPath = await FS.getUri({ path, directory: Dir.Documents });
-        const share = window.capacitorShare.Share;
+        await FS.writeFile({ path, directory: 'DOCUMENTS', data: base64 });
+        const savedPath = await FS.getUri({ path, directory: 'DOCUMENTS' });
+        const share = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) ||
+                      (window.capacitorShare && window.capacitorShare.Share);
         await share.share({
           title: 'Map Screenshot',
           files: [savedPath.uri],
