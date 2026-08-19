@@ -7,19 +7,23 @@
 <title>Map to Area</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="vendor/html2canvas.min.js"></script>
 <script>
-// Detect native Capacitor bridge — skip vendor web-fallback scripts on native
+// Save the native Capacitor bridge before vendor Capacitor scripts load (they may overwrite window.Capacitor)
+var __nativeCapacitor = window.Capacitor;
+</script>
+<script src="vendor/capacitor.js" id="capVendorJs"></script>
+<script src="vendor/filesystem.js"></script>
+<script src="vendor/share.js"></script>
+<script>
+// On Android/iOS, the native bridge provides working plugin proxies.
+// The vendor scripts above set up web-only fallbacks that break on native.
+// Restore the native bridge and preserve its plugin references.
 (function(){
-  var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) ||
-    !!(window.androidBridge) ||
-    !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge);
-  if (!isNative) {
-    document.write('<script src="vendor/capacitor.js"><\/script>');
-    document.write('<script src="vendor/filesystem.js"><\/script>');
-    document.write('<script src="vendor/share.js"><\/script>');
-    document.write('<script src="vendor/html2canvas.min.js"><\/script>');
-  } else {
-    document.write('<script src="vendor/html2canvas.min.js"><\/script>');
+  if (__nativeCapacitor && __nativeCapacitor.isNativePlatform && __nativeCapacitor.isNativePlatform()) {
+    window.Capacitor = __nativeCapacitor;
+    try { document.getElementById('capVendorJs').parentNode.removeChild(document.getElementById('capVendorJs')); } catch(e) {}
+    delete window.capacitorExports;
   }
 })();
 </script>
