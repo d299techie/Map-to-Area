@@ -10,12 +10,12 @@
     "android:build": "cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
-    "@capacitor/android": "^5.7.8",
-    "@capacitor/cli": "^5.7.8",
-    "@capacitor/core": "^5.7.8",
-    "@capacitor/filesystem": "^5.2.2",
-    "@capacitor/geolocation": "^5.0.7",
-    "@capacitor/share": "^5.0.8"
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/geolocation": "^8.2.2",
+    "@capacitor/share": "^8.0.1"
   },
   "devDependencies": {
     "html2canvas": "^1.4.1"

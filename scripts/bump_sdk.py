@@ -1,15 +1,11 @@
 import re
 import os
 
-# Bump SDK versions in variables.gradle
+# Ensure minSdkVersion is 24 in variables.gradle
 with open('android/variables.gradle') as f:
     c = f.read()
 
 c = re.sub(r'minSdkVersion\s*=\s*\d+', 'minSdkVersion = 24', c)
-c = re.sub(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = 33', c)
-c = re.sub(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = 33', c)
-c = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 33', c)
-c = re.sub(r'targetSdk\s*=\s*\d+', 'targetSdk = 33', c)
 
 with open('android/variables.gradle', 'w') as f:
     f.write(c)
@@ -30,7 +26,8 @@ if os.path.exists(manifest_path):
     added = 0
     for perm in needed:
         if perm not in m:
-            m = m.replace('<uses-permission', f'<uses-permission android:name="{perm}" />\n    <uses-permission')
+            # Insert before </manifest>
+            m = m.replace('</manifest>', f'    <uses-permission android:name="{perm}" />\n</manifest>')
             added += 1
 
     if added > 0:
