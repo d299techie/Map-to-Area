@@ -8,7 +8,7 @@
 
 | Property | Value |
 |---|---|
-| **Platform** | Android (Capacitor 5) + Web (PWA) |
+| **Platform** | Android (Capacitor 8) + Web (PWA) |
 | **Rendering** | Leaflet.js 1.9.4 |
 | **Geospatial** | Turf.js 7 (area), custom Haversine (distance) |
 | **Tile layers** | ESRI World Imagery (base), CARTO Dark Only Labels (overlay) |
@@ -260,23 +260,50 @@ All measurements recalculate on every point add/remove/drag, mode switch, and un
 
 ---
 
-## 10. Units of Measurement — Summary
+## 10. Android Native Bridge Handling
+
+Capacitor's Android native bridge (`native-bridge.js`) is injected via `addDocumentStartJavaScript` before any page scripts run. It provides `window.Capacitor` with native plugin proxies (`Plugins.Filesystem`, `Plugins.Share`, `Plugins.Geolocation`) that communicate directly with Java code.
+
+The bundled vendor scripts (`vendor/capacitor.js`, `filesystem.js`, `share.js`) are **web-only fallbacks** used when running outside a native app (browser/PWA). On Android they must NOT execute, because they would overwrite the native bridge and break all plugin calls.
+
+**Implementation:** an inline synchronous script in `<head>` detects the native platform via `window.Capacitor.isNativePlatform()`. On native, the three vendor Capacitor scripts are never written into the DOM. Only `vendor/html2canvas.min.js` (a standalone rendering library) loads on all platforms.
+
+The app code (`Store` module, screenshot function) uses `window.Capacitor.Plugins.Filesystem` / `Plugins.Share` directly on native, falling back to `window.capacitorFilesystem` / `capacitorShare` on web.
+
+---
+
+## 11. Capacitor Version Strategy
+
+| Dependency | Version | Notes |
+|---|---|---|
+| `@capacitor/core` | `^8.5.0` | Web runtime |
+| `@capacitor/android` | `^8.5.0` | Android native library (requires JDK 21) |
+| `@capacitor/cli` | `^8.5.0` | CLI tool |
+| `@capacitor/filesystem` | `^8.1.2` | File I/O for JSON data + screenshots |
+| `@capacitor/geolocation` | `^8.2.2` | GPS location |
+| `@capacitor/share` | `^8.0.1` | Share sheet for screenshots |
+
+Upgraded from Capacitor 5 → 8 to fix Android 14+ compatibility. The previous `@capacitor/share` v5.0.8 called `registerReceiver()` without the `RECEIVER_EXPORTED` flag (required on API 34+), causing a `SecurityException` at `SharePlugin.load()` during activity startup. Capacitor 8 includes the fix.
+
+---
+
+## 12. Units of Measurement — Summary
 
 | Category | Units | Default |
-|---|---|---|
+|--|---|---|
 | Area | ft², Cent, Acre, m², Are, Hectare, km², yd², mi² | ft² |
 | Length / Perimeter | ft, m, km, yd, mi | ft |
 
 ---
 
-## 11. CI / Build
+## 13. CI / Build
 
 | Step | Action |
 |---|---|
 | Checkout | `actions/checkout@v4` |
 | Node | 22, `npm install` |
-| Java | 17 (Temurin) |
-| Android SDK | Platform 34 |
+| Java | 21 (Temurin) |
+| Android SDK | Platform 36 |
 | Prepare www | Copies `index.html`, `manifest.json`, `sw.js`, and `vendor/*.js` to `www/` |
 | Capacitor | Adds Android platform if new, otherwise runs `cap sync` |
 | Bump SDK | Python script: bumps SDK versions in `variables.gradle`, injects GPS permissions into `AndroidManifest.xml` |
@@ -286,7 +313,7 @@ All measurements recalculate on every point add/remove/drag, mode switch, and un
 
 ---
 
-## 12. File Structure
+## 14. File Structure
 
 ```
 /
@@ -296,12 +323,12 @@ All measurements recalculate on every point add/remove/drag, mode switch, and un
 ├── sw.js                         # Service worker for offline caching
 ├── package.json                  # Dependencies including @capacitor/*
 ├── vendor/
-│   ├── capacitor.js              # Capacitor core web runtime
-│   ├── filesystem.js             # Filesystem plugin (Document storage, screenshots)
-│   ├── share.js                  # Share plugin (Android share sheet for screenshots)
-│   └── html2canvas.min.js        # Screenshot renderer (bundled, no CDN)
+│   ├── capacitor.js              # Capacitor core web runtime (loaded on web only via conditional guard)
+│   ├── filesystem.js             # Filesystem plugin web fallback (loaded on web only)
+│   ├── share.js                  # Share plugin web fallback (loaded on web only)
+│   └── html2canvas.min.js        # Screenshot renderer (bundled, no CDN, loaded on all platforms)
 ├── scripts/
-│   └── bump_sdk.py              # CI: bumps SDK, injects permissions
+│   └── bump_sdk.py              # CI: ensures minSdkVersion=24, injects GPS permissions into AndroidManifest.xml
 └── .github/workflows/
-    └── build-apk.yml             # CI pipeline
+    └── build-apk.yml             # CI pipeline (JDK 21, SDK 36, Gradle assembleDebug)
 ```
